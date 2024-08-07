@@ -1,7 +1,10 @@
 import io
+import json
+import os
 import pickle
 
 from google.cloud import storage
+from google.oauth2 import service_account
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -23,11 +26,19 @@ CREDENTIALS_FILE = r'C:\Users\odolan\PycharmProjects\SlackBot\client_secret_cred
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
-# Using local creds with a fixed port
 def get_drive_service():
-    flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
-    # Use a fixed port, e.g., 8080
-    credentials = flow.run_local_server(port=8080)
+    # Get the JSON string from the environment variable
+    credentials_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+    if not credentials_json:
+        raise ValueError("GOOGLE_CREDENTIALS_JSON environment variable not set")
+
+    # Load the credentials as a JSON object
+    credentials_info = json.loads(credentials_json)
+
+    # Create a service account credentials object
+    credentials = service_account.Credentials.from_service_account_info(credentials_info, scopes=SCOPES)
+
+    # Build the Drive service
     service = build('drive', 'v3', credentials=credentials)
     return service
 
