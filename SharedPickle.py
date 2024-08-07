@@ -25,18 +25,26 @@ PICKLE_FILE_ID = '1h9fu1mZa9pzQLDOIjEpejBz8zKpbMtyG'
 CREDENTIALS_FILE = r'C:\Users\odolan\PycharmProjects\SlackBot\client_secret_creds.json'
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
+CREDENTIALS_FILE = 'credentials_file.json'
 
 def get_drive_service():
-    # Get the JSON string from the environment variable
-    credentials_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-    if not credentials_json:
-        raise ValueError("GOOGLE_CREDENTIALS_JSON environment variable not set")
+    credentials = None
 
-    # Load the credentials as a JSON object
-    credentials_info = json.loads(credentials_json)
+    # Check if the credentials file exists
+    if os.path.exists(CREDENTIALS_FILE):
+        # Load credentials from the JSON file
+        credentials = service_account.Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=SCOPES)
+    else:
+        # Get the JSON string from the environment variable
+        credentials_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+        if not credentials_json:
+            raise ValueError("GOOGLE_CREDENTIALS_JSON environment variable not set")
 
-    # Create a service account credentials object
-    credentials = service_account.Credentials.from_service_account_info(credentials_info, scopes=SCOPES)
+        # Load the credentials as a JSON object
+        credentials_info = json.loads(credentials_json)
+
+        # Create a service account credentials object
+        credentials = service_account.Credentials.from_service_account_info(credentials_info, scopes=SCOPES)
 
     # Build the Drive service
     service = build('drive', 'v3', credentials=credentials)
