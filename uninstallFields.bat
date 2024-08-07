@@ -1,0 +1,1 @@
+python C:\Users\javie\Projects\S-TOMAto\uninstallFields.py
