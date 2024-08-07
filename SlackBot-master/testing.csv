@@ -1,2 +1,0 @@
-logger_id,date,time,canopy_temperature,ambient_temperature,vpd,vwc_1,vwc_2,vwc_3,field_capacity,wilting_point,daily_gallons,daily_switch,daily_hours,daily_pressure,psi,psi_threshold,psi_critical,sdd,rh,eto,kc,etc,et_hours
-z6-02046,2021-05-07,,,85.2,2.96,23.7,32.8,35.9,,,,,,,,,,,26.6,,0.2,,
