@@ -1,0 +1,12 @@
+steps:
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud functions deploy slack_bot_function \
+        --runtime python39 \
+        --trigger-http \
+        --allow-unauthenticated \
+        --set-secrets "SLACK_BOT_TOKEN=slack-bot-token:latest,SLACK_SIGNING_SECRET=slack-signing-secret:latest" \
+        --source .

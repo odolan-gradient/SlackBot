@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="dataSourceStorageLocal" created-in="PY-241.17890.14">
+    <data-source name="Google BigQuery" uuid="db711102-203d-474e-8803-b17162a1bf1e">
+      <database-info product="" version="" jdbc-version="" driver-name="" driver-version="" dbms="BIGQUERY" />
+      <schema-mapping />
+    </data-source>
+  </component>
+</project>
