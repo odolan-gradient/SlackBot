@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "rich-meridian-430023-j1",
+  "private_key_id": "6c518e24db10598702dc5176c81905e302a8b5d8",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC8uPfu2QBswdW/\nTAr9y34PbPjwOseCAIGtzaJhVbfdTxsqTa49goURviUkygOCdcA40J5jaeHoapzs\nJnl50sx+/Vgbx9tOkA2Ile8+8iKZx9jGiH7humOPjkzXEnH2XtTR0SAVvMaMetME\n3jasvLlnok+S5oGHYfpJQbHjZTHs76NUD4OFo5fWEbB8g3ZNt8LFENd3N8TSDIwM\ntM7IZuWLXo00KIqFwhK/qplABZ2jqpmSWvqHRAwSYWR02M1RTt66I8o2N+jg9HZJ\nhKHwkXUhQQy6r1tlKa60+kzSbojXdKikNQI06/imZUZOtLTJlidnq10F55TXCOSR\nV3U9DtlVAgMBAAECggEADEFHql0xk55nsq8ttIrjEf3d0X3DqFu/kAl/LqpqEOc6\n6J2YP7rKyNrr3w52OWHLnHThoCuHRbgsngIml8RaTrHFZ7Jr+ZdNpa201kXTfOB3\nIXdKI/7eSbtwHnQ+bcT9NW3K01aJnyQ3sUR70O5FbOcjmzK4PRId9mVbd5yB6DSP\n8CrCXD5W9Lv1N5/ijz2iJc/ChnfDIjkJDXn5V9nJI60uHSQPvuC8hpDV8NH8kX/j\n6t7OYssy/yPCa7SCU6AP1eJEjBE9rj2L7GYcmhiJojx4juEqNrELmqab7TpS4cSl\n67qQhjNG5bvuZfXFrU3R2la4SuI1LS/lxomfb7Xs6QKBgQDqMeBBLzhHtqpAMay9\nT8JlnvVjVhq3nUELkTW4q1AbKEJlN3YQZGBb0WwdXlcmTmPRPbMa+1RtviSP8G0D\nYkuS3sna/MqQYuv3gcemkT7bJkYKcoOLRyJBW8rw/FOWjn1Jju4DHHByMGGmaaWH\nhm3uzMf6UW1VT0kSH3lslBTZrQKBgQDOSz4pHi2kqh/IgMpo+tGfxcqWJdF6JVca\nQAheUutFEsUvrronTVcabAydrb4z/dw9a2zzvL7r5GVme5zbgWtOBpDQY+xvm4pA\nnUwpyJ0ac+IxWKeqDGsdTUL+jCVgZCdwJOc3WoshGdqIELiEUMRi4jn0RW7zXeCy\nyu5pjEbDSQKBgQC6zpYG6NeHvJkJI5aaW2jBDo7GcgRVukYMKAQmDeCUCQUNH7Q5\nVxfVpbMLqhjyIU1VtlWLjDbIYwdfGXSbYmjN+pAg8cvSaFW40/ihUPJGdL0h0D5F\ndrRIViQHHf6+9WHSrwQDz0eSji0WROcYt44xEX/il9kSV2/92MVOasBG8QKBgQCB\nW08sK19FnOP3L0M9FuIxhK5m/mnfZOC8diCJPQeINZ/uKWtTT7zptY0nppXZNjtP\nTDhykg1KD9rBq4uNXRbzQ0y1T6MnzOmhYMEshj51IutYNBZWnBjis9rpkOmzCrps\nKMfPvvf1FqggoBOD7L1ooCDlGlDbTCelFXjwOGT6+QKBgDGHhHBXzHiORR5tDVTw\n+4NEWfZsy1srqRc6Cy1NpyovhgEY/d528L6oXbzzn6Va/9nsvHMnykXguwg18m7m\nawICHIRu0Y1tT2OZfsM0xi3Xlzb2qJupkiNp5s/LgLvvZAgFco+cEC1j/15h1oZ9\nQJFaKBddA/dG8g+e6WDHAYpT\n-----END PRIVATE KEY-----\n",
+  "client_email": "slack-bot-service-account@rich-meridian-430023-j1.iam.gserviceaccount.com",
+  "client_id": "104920020437657199869",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/slack-bot-service-account%40rich-meridian-430023-j1.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

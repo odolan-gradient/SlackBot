@@ -25,7 +25,7 @@ PICKLE_FILE_ID = '1h9fu1mZa9pzQLDOIjEpejBz8zKpbMtyG'
 CREDENTIALS_FILE = r'C:\Users\odolan\PycharmProjects\SlackBot\client_secret_creds.json'
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
-CREDENTIALS_FILE = 'credentials_file.json'
+CREDENTIALS_FILE = 'rich-meridian-430023-j1-6c518e24db10.json'
 
 def get_drive_service():
     credentials = None
@@ -262,3 +262,4 @@ def main(request):
     return slack_bot(request)
 
 open_pickle()
+show_pickle()
