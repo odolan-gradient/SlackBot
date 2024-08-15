@@ -25,6 +25,14 @@ PICKLE_FILE_ID = '1h9fu1mZa9pzQLDOIjEpejBz8zKpbMtyG'
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
+class CustomUnpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        if module == 'pathlib' and name == 'WindowsPath':
+            return Path  # Replace WindowsPath with a generic Path (PosixPath on Unix systems)
+        return super().find_class(module, name)
+
+def custom_load(file_obj):
+    return CustomUnpickler(file_obj).load()
 def get_drive_service():
     credentials_info = {
           "type": "service_account",
@@ -95,11 +103,11 @@ def open_pickle(file_id=PICKLE_FILE_ID):
         downloader = MediaIoBaseDownload(fh, request)
 
         done = False
-        while done is False:
+        while not done:
             status, done = downloader.next_chunk()
 
         fh.seek(0)
-        data = pickle.load(fh)
+        data = custom_load(fh)
         return data
     except Exception as e:
         print(f"Error reading from Shared Drive: {e}")
@@ -325,8 +333,8 @@ def slack_bot(request):
 # Entry point for Google Cloud Functions
 def main(request):
     return slack_bot(request)
-
-rewrite_pickle_without_paths_in_drive()
-
-open_pickle()
-show_pickle()
+# 
+# rewrite_pickle_without_paths_in_drive()
+# 
+# open_pickle()
+# show_pickle()
