@@ -10,7 +10,6 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from dotenv import load_dotenv
-from pathlib import Path, WindowsPath, PosixPath
 
 load_dotenv()
 
@@ -25,14 +24,6 @@ PICKLE_FILE_ID = '1h9fu1mZa9pzQLDOIjEpejBz8zKpbMtyG'
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
-class CustomUnpickler(pickle.Unpickler):
-    def find_class(self, module, name):
-        if module == 'pathlib' and name == 'WindowsPath':
-            return Path  # Replace WindowsPath with a generic Path (PosixPath on Unix systems)
-        return super().find_class(module, name)
-
-def custom_load(file_obj):
-    return CustomUnpickler(file_obj).load()
 def get_drive_service():
     credentials_info = {
           "type": "service_account",
@@ -103,11 +94,11 @@ def open_pickle(file_id=PICKLE_FILE_ID):
         downloader = MediaIoBaseDownload(fh, request)
 
         done = False
-        while not done:
+        while done is False:
             status, done = downloader.next_chunk()
 
         fh.seek(0)
-        data = custom_load(fh)
+        data = pickle.load(fh)
         return data
     except Exception as e:
         print(f"Error reading from Shared Drive: {e}")
@@ -153,24 +144,6 @@ def download_pickle(file_id = PICKLE_FILE_ID):
     return pickle.load(fh)
 
 
-def convert_paths_in_data(data):
-    """
-    Recursively convert WindowsPath or PosixPath objects in the data to strings.
-    """
-    if isinstance(data, dict):
-        return {key: convert_paths_in_data(value) for key, value in data.items()}
-    elif isinstance(data, list):
-        return [convert_paths_in_data(item) for item in data]
-    elif isinstance(data, tuple):
-        return tuple(convert_paths_in_data(item) for item in data)
-    elif isinstance(data, set):
-        return {convert_paths_in_data(item) for item in data}
-    elif isinstance(data, (WindowsPath, PosixPath)):
-        return str(data)
-    else:
-        return data
-
-
 def upload_pickle_to_drive(data, filename: str, file_id=None):
     """
     Upload a pickle file to Google Drive, overwriting if file_id is provided.
@@ -211,33 +184,6 @@ def upload_pickle_to_drive(data, filename: str, file_id=None):
         print(f"Error writing to Shared Drive: {e}")
         return None
 
-
-def rewrite_pickle_without_paths_in_drive(file_id=PICKLE_FILE_ID, filename=PICKLE_NAME):
-    """
-    Rewrites the entire pickle file from Google Drive, converting any WindowsPath or PosixPath objects to strings,
-    and uploads the new pickle file back to the shared drive.
-
-    :param file_id: ID of the existing pickle file in Google Drive.
-    :param filename: Name for the new or updated pickle file.
-    :return: None
-    """
-    # Load the original pickle data from Google Drive
-    data = open_pickle(file_id=file_id)
-
-    if data is None:
-        print("No data found in the pickle file. Aborting the rewrite process.")
-        return
-
-    # Convert any paths in the data
-    data_converted = convert_paths_in_data(data)
-
-    # Upload the converted data back to Google Drive
-    new_file_id = upload_pickle_to_drive(data_converted, filename=filename, file_id=file_id)
-
-    if new_file_id:
-        print(f"Pickle file rewritten and uploaded successfully with file ID: {new_file_id}")
-    else:
-        print("Failed to upload the rewritten pickle file.")
 
 def write_pickle(data, filename: str = PICKLE_NAME, file_id=PICKLE_FILE_ID):
     """
@@ -333,8 +279,6 @@ def slack_bot(request):
 # Entry point for Google Cloud Functions
 def main(request):
     return slack_bot(request)
-# 
-# rewrite_pickle_without_paths_in_drive()
 # 
 # open_pickle()
 # show_pickle()
