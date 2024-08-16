@@ -18,9 +18,11 @@ load_dotenv()
 # Constants
 DIRECTORY_YEAR = "2024"
 PICKLE_NAME = f"{DIRECTORY_YEAR}_pickle_test.pickle"
+PICKLE_NAME = f"{DIRECTORY_YEAR}_pickle_test_1.pickle"
 
 SHARED_DRIVE_ID = '0ACxUDm7mZyTVUk9PVA'
 PICKLE_FILE_ID = '1h9fu1mZa9pzQLDOIjEpejBz8zKpbMtyG'
+PICKLE_FILE_ID = '1l20dBjwVjR0tjHk0ksbYxBXt_Jfkiorb'
 # CREDENTIALS_FILE = r'C:\Users\odolan\PycharmProjects\SlackBot\client_secret_creds.json'
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
@@ -152,47 +154,6 @@ def download_pickle(file_id = PICKLE_FILE_ID):
     return pickle.load(fh)
 
 
-def upload_pickle_to_drive(data, filename: str, file_id=None):
-    """
-    Upload a pickle file to Google Drive, overwriting if file_id is provided.
-    """
-    try:
-        # Serialize data to a pickle in memory
-        pickle_data = io.BytesIO()
-        pickle.dump(data, pickle_data)
-        pickle_data.seek(0)  # Go to the start of the BytesIO buffer
-
-        media = MediaIoBaseUpload(pickle_data, mimetype='application/octet-stream', resumable=True)
-
-        if file_id:
-            # Update the existing file
-            file = service.files().update(
-                fileId=file_id,
-                media_body=media,
-                supportsAllDrives=True,
-                fields='id'
-            ).execute()
-        else:
-            # Create a new file
-            file_metadata = {
-                'name': filename,
-                'parents': [SHARED_DRIVE_ID],
-                'driveId': SHARED_DRIVE_ID
-            }
-            file = service.files().create(
-                body=file_metadata,
-                media_body=media,
-                supportsAllDrives=True,
-                fields='id'
-            ).execute()
-
-        print(f"Pickle {'updated' if file_id else 'created'} in Shared Drive with file ID: {file.get('id')}")
-        return file.get('id')
-    except Exception as e:
-        print(f"Error writing to Shared Drive: {e}")
-        return None
-
-
 def write_pickle(data, filename: str = PICKLE_NAME, file_id=PICKLE_FILE_ID):
     """
     Function to upload a pickle file to Google Drive, completely replacing the old data.
@@ -289,4 +250,6 @@ def main(request):
     return slack_bot(request)
 # 
 # open_pickle()
-show_pickle()
+# show_pickle()
+list_files()
+list_shared_drive_files()
