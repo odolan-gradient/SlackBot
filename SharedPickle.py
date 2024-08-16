@@ -10,6 +10,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from dotenv import load_dotenv
+from pathlib import Path, WindowsPath, PosixPath
 
 load_dotenv()
 
@@ -23,7 +24,31 @@ PICKLE_FILE_ID = '1h9fu1mZa9pzQLDOIjEpejBz8zKpbMtyG'
 # CREDENTIALS_FILE = r'C:\Users\odolan\PycharmProjects\SlackBot\client_secret_creds.json'
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
+class CustomUnpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        if module == 'pathlib' and name == 'WindowsPath':
+            return Path  # Replace WindowsPath with a generic Path (PosixPath on Unix systems)
+        return super().find_class(module, name)
 
+def custom_load(file_obj):
+    return CustomUnpickler(file_obj).load()
+
+def open_pickle(file_id=PICKLE_FILE_ID):
+    try:
+        request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+
+        fh.seek(0)
+        data = custom_load(fh)  # Use the custom loader to handle WindowsPath
+        return data
+    except Exception as e:
+        print(f"Error reading from Shared Drive: {e}")
+        return None
 def get_drive_service():
     credentials_info = {
           "type": "service_account",
@@ -86,23 +111,6 @@ def list_files():
                 print(f"{item['name']} ({item['id']})")
     except Exception as e:
         print(f"An error occurred: {e}")
-
-def open_pickle(file_id=PICKLE_FILE_ID):
-    try:
-        request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
-        fh = io.BytesIO()
-        downloader = MediaIoBaseDownload(fh, request)
-
-        done = False
-        while done is False:
-            status, done = downloader.next_chunk()
-
-        fh.seek(0)
-        data = pickle.load(fh)
-        return data
-    except Exception as e:
-        print(f"Error reading from Shared Drive: {e}")
-        return None
 
 def list_shared_drive_files(drive_id = SHARED_DRIVE_ID):
     try:
@@ -281,4 +289,4 @@ def main(request):
     return slack_bot(request)
 # 
 # open_pickle()
-# show_pickle()
+show_pickle()
