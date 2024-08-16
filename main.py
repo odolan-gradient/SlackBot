@@ -10,10 +10,8 @@ from slack_bolt.adapter.flask import SlackRequestHandler
 import DBWriter
 import SharedPickle
 
-# Load environment variables from .env file
 load_dotenv()
 
-# Initialize your app with your bot token and signing secret
 app = App(
     token=os.getenv("SLACK_BOT_TOKEN"),
     signing_secret=os.getenv("SLACK_SIGNING_SECRET")
@@ -37,10 +35,8 @@ def main_menu_command(ack, body, respond):
     ack()
 
     # Get the user who invoked the command
-    user_id = body["user_id"]
-    menu_options = ['Get Soil Type', 'Change Soil Type', 'Turn on PSI']
+    menu_options = ['Get Soil Type', 'Change Soil Type', 'Turn on PSI', 'Show Pickle']
     main_menu(ack, respond, menu_options)
-    # respond(f"{soil}")
 
 
 def generate_options(list_of_items):
@@ -184,6 +180,8 @@ def handle_main_menu(ack, body, respond):
         get_soil_menu(ack, respond)
     elif menu_option == 'Turn on PSI':
         turn_on_psi_menu(ack, respond)
+    elif menu_option == 'Show Pickle':
+        show_pickle_menu(ack, respond)
 
 
 
@@ -372,6 +370,24 @@ def turn_on_psi_menu(ack, respond):
 
     respond(response)
 
+
+def show_pickle_menu(ack, respond):
+    ack()
+
+    # Get the pickle contents
+    data = SharedPickle.open_pickle()
+    pickle_contents = "PICKLE CONTENTS\n"
+
+    for d in data:
+        # Assuming each object has a to_string() method
+        pickle_contents += d.to_string() + "\n"
+
+    # Send the pickle contents to the Slack channel
+    response = {
+        "response_type": "in_channel",
+        "text": pickle_contents
+    }
+    respond(response)
 def turn_on_psi(grower_name, field_name, logger_name):
 
     growers = SharedPickle.open_pickle()
