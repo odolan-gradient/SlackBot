@@ -386,24 +386,7 @@ def show_pickle_menu(ack, respond):
     ack()
 
     # Get the pickle contents
-    data = SharedPickle.open_pickle()
-    pickle_contents = "PICKLE CONTENTS\n"
-
-    if data is None:
-        pickle_contents += "No data found in pickle file."
-    else:
-        for d in data:
-            if d is None:
-                obj = "None"
-            elif hasattr(d, 'to_string') and callable(d.to_string):
-                obj = d.to_string()
-            else:
-                obj = str(d)
-
-            if obj is not None:
-                pickle_contents += str(obj) + "\n"
-            else:
-                pickle_contents += "None\n"
+    pickle_contents = SharedPickle.show_pickle()
 
     # Send the pickle contents to the Slack channel
     response = {
@@ -537,9 +520,11 @@ def slack_events():
 def slack_bot(request):
     return slack_events()
 
-# # If you want to run locally (not needed for Cloud Functions)
-# if __name__ == "__main__":
-#     flask_app.run(port=int(os.getenv("PORT", 3000)))
+# If you want to run locally (not needed for Cloud Functions)
+if __name__ == "__main__":
+    flask_app.run(port=int(os.getenv("PORT", 3000)))
 
 # if __name__ == "__main__":
 #     app.start(port=int(os.getenv("PORT", 3000)))
+
+# https://oyster-app-yycv8.ondigitalocean.app/slack/events

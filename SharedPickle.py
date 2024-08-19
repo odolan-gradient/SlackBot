@@ -200,10 +200,12 @@ def show_pickle(filename: str = PICKLE_NAME):
         :return:
     """
     data = open_pickle(file_id=PICKLE_FILE_ID)
-    print("PICKLE CONTENTS")
-    for d in data:
-        d.to_string()
+    pickle_contents = "PICKLE CONTENTS\n"
 
+    for d in data:
+        pickle_contents += d.to_string()
+    print(pickle_contents)
+    return pickle_contents
 def get_grower(grower_name: str):
     """
     Function to get a grower object from the pickle
@@ -249,4 +251,4 @@ def slack_bot(request):
 def main(request):
     return slack_bot(request)
 
-# show_pickle()
+show_pickle()
