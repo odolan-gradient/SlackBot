@@ -389,10 +389,18 @@ def show_pickle_menu(ack, respond):
     data = SharedPickle.open_pickle()
     pickle_contents = "PICKLE CONTENTS\n"
 
-    for d in data:
-        obj = d.to_string()
+    if data is None:
+        pickle_contents += "No data found in pickle file."
+    else:
+        for d in data:
+            if d is None:
+                obj = "None"
+            elif hasattr(d, 'to_string') and callable(d.to_string):
+                obj = d.to_string()
+            else:
+                obj = str(d)
 
-        pickle_contents += obj + "\n"
+            pickle_contents += obj + "\n"
 
     # Send the pickle contents to the Slack channel
     response = {
