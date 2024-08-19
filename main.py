@@ -392,8 +392,8 @@ def show_pickle_menu(ack, respond):
     for d in data:
         print(d)
         # Assuming each object has a to_string() method
-        string_representation = d.to_string() or "No string representation"
-        pickle_contents += string_representation + "\n"
+
+        pickle_contents += d + "\n"
 
     # Send the pickle contents to the Slack channel
     response = {
