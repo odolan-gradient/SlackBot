@@ -387,20 +387,32 @@ def show_pickle_menu(ack, respond):
 
     # Get the pickle contents
     data = SharedPickle.open_pickle()
-    pickle_contents = "PICKLE CONTENTS\n"
 
+    # Prepare the initial message
+    response_message = "PICKLE CONTENTS\n"
+
+    # Initialize a list to hold individual messages
+    messages = []
+
+    # Loop through the data and create individual messages
     for d in data:
-        print(d)
         # Assuming each object has a to_string() method
+        message_part = d.to_string()
 
-        pickle_contents += d + "\n"
+        # If the message part is None, skip it
+        if message_part is None:
+            continue
 
-    # Send the pickle contents to the Slack channel
-    response = {
-        "response_type": "in_channel",
-        "text": pickle_contents
-    }
-    respond(response)
+        # Append to the list of messages
+        messages.append(message_part)
+
+    # Send messages to Slack
+    for message in messages:
+        response = {
+            "response_type": "in_channel",
+            "text": response_message + message
+        }
+        respond(response)
 def turn_on_psi(grower_name, field_name, logger_name):
 
     growers = SharedPickle.open_pickle()

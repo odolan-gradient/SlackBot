@@ -249,4 +249,4 @@ def slack_bot(request):
 def main(request):
     return slack_bot(request)
 
-show_pickle()
+# show_pickle()
