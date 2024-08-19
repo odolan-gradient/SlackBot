@@ -50,17 +50,28 @@ def generate_options(list_of_items):
         } for item in list_of_items
     ]
 
+
 @app.action("get_soil_type")
 def handle_get_soil(ack, body, respond):
     # Acknowledge command request
     ack()
 
     # Get the user who invoked the command
-    coords = body['state']['values']['soil_input']['soil_coordinates_input']['value'].split(" ")
-    lat = coords[0]
-    long = coords[1]
-    soil = get_soil_type_from_coords(lat, long)
-    respond(f"Soil type at {coords}: \n\t{soil}")
+    raw_coords = body['state']['values']['soil_input']['soil_coordinates_input']['value']
+
+    # Split coordinates by either space or comma
+    if ',' in raw_coords:
+        coords = raw_coords.split(',')
+    else:
+        coords = raw_coords.split()
+
+    if len(coords) == 2:
+        lat, long = coords
+        soil = get_soil_type_from_coords(lat, long)
+        respond(f"Soil type at {coords}: \n\t{soil}")
+    else:
+        respond("Error: Coordinates should be in the format 'latitude longitude' or 'latitude,longitude'.")
+
 
 @app.action("soil_select")
 @app.action("logger_select_change_soil")
