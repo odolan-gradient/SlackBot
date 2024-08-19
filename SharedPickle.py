@@ -18,11 +18,10 @@ load_dotenv()
 # Constants
 DIRECTORY_YEAR = "2024"
 PICKLE_NAME = f"{DIRECTORY_YEAR}_pickle_test.pickle"
-PICKLE_NAME = f"{DIRECTORY_YEAR}_pickle_test_1.pickle"
+PICKLE_DIRECTORY = "H:\\Shared drives\\Stomato\\" + DIRECTORY_YEAR + "\\Pickle\\"
 
 SHARED_DRIVE_ID = '0ACxUDm7mZyTVUk9PVA'
 PICKLE_FILE_ID = '1h9fu1mZa9pzQLDOIjEpejBz8zKpbMtyG'
-PICKLE_FILE_ID = '1l20dBjwVjR0tjHk0ksbYxBXt_Jfkiorb'
 # CREDENTIALS_FILE = r'C:\Users\odolan\PycharmProjects\SlackBot\client_secret_creds.json'
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
@@ -51,6 +50,7 @@ def open_pickle(file_id=PICKLE_FILE_ID):
     except Exception as e:
         print(f"Error reading from Shared Drive: {e}")
         return None
+
 def get_drive_service():
     credentials_info = {
           "type": "service_account",
@@ -248,8 +248,5 @@ def slack_bot(request):
 # Entry point for Google Cloud Functions
 def main(request):
     return slack_bot(request)
-# 
-# open_pickle()
-# show_pickle()
-list_files()
-list_shared_drive_files()
+
+show_pickle()

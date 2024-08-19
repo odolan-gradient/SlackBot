@@ -390,6 +390,7 @@ def show_pickle_menu(ack, respond):
     pickle_contents = "PICKLE CONTENTS\n"
 
     for d in data:
+        print(d)
         # Assuming each object has a to_string() method
         string_representation = d.to_string() or "No string representation"
         pickle_contents += string_representation + "\n"
