@@ -400,7 +400,10 @@ def show_pickle_menu(ack, respond):
             else:
                 obj = str(d)
 
-            pickle_contents += obj + "\n"
+            if obj is not None:
+                pickle_contents += str(obj) + "\n"
+            else:
+                pickle_contents += "None\n"
 
     # Send the pickle contents to the Slack channel
     response = {
