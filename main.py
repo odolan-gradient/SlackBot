@@ -31,10 +31,8 @@ fields = [field.name for grower in growers for field in grower.fields]
 
 @app.command("/menu")
 def main_menu_command(ack, body, respond):
-    # Acknowledge command request
     ack()
 
-    # Get the user who invoked the command
     menu_options = ['Get Soil Type', 'Change Soil Type', 'Turn on PSI', 'Show Pickle']
     main_menu(ack, respond, menu_options)
 
@@ -156,6 +154,7 @@ def fix_ampersand(text):
 
 @app.action("grower_select_psi")
 @app.action("grower_select_change_soil")
+@app.action("grower_select_show")
 def handle_grower_menu(ack, body, respond):
     ack()
 
@@ -173,11 +172,19 @@ def handle_grower_menu(ack, body, respond):
 
     if grower_action_id == 'grower_select_psi':
         action_id = 'field_select_psi'
+        field_list_menu(ack, respond, field_list, action_id)
     elif grower_action_id == 'grower_select_change_soil':
         action_id = 'field_select_change_soil'
-
-    field_list_menu(ack, respond, field_list, action_id)
-
+        field_list_menu(ack, respond, field_list, action_id)
+    elif grower_action_id == 'grower_select_show':
+        grower = SharedPickle.get_grower(selected_value)
+        pickle_contents = grower.to_string()
+        chunks = [pickle_contents[i:i + 16000] for i in range(0, len(pickle_contents), 16000)]
+        for chunk in chunks:
+            respond({
+                "response_type": "in_channel",
+                "text": chunk
+            })
 
 
 @app.action("menu_select")
@@ -321,7 +328,7 @@ def get_soil_menu(ack, respond):
                 "action_id": "soil_coordinates_input",
                 "placeholder": {
                     "type": "plain_text",
-                    "text": "Enter coordinates with a space separating",
+                    "text": "Enter coordinates",
                     "emoji": True
                 }
             },
@@ -352,6 +359,19 @@ def get_soil_menu(ack, respond):
         blocks=blocks,
         text="Get Soil Type"
     )
+
+def show_pickle_menu(ack, respond):
+    ack()
+    action_id = 'grower_select_show'
+    response = {
+        "response_type": "in_channel",
+        "text": "Show Grower Info",
+        "attachments": [
+            grower_select_block(grower_names, action_id)
+        ]
+    }
+
+    respond(response)
 def grower_select_block(grower_names, action_id):
     return {
         "text": "Choose Grower",
@@ -382,19 +402,8 @@ def turn_on_psi_menu(ack, respond):
     respond(response)
 
 
-def show_pickle_menu(ack, respond):
-    ack()
 
-    # Get the pickle contents
-    pickle_contents = SharedPickle.show_pickle()
 
-    # Send the pickle contents to the Slack channel
-    response = {
-        "response_type": "in_channel",
-        "text": pickle_contents
-    }
-    print('Pickle: ' + pickle_contents)
-    respond(response)
 def turn_on_psi(grower_name, field_name, logger_name):
 
     growers = SharedPickle.open_pickle()
