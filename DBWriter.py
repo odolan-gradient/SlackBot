@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+import base64
 
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
@@ -51,8 +52,9 @@ class DBWriter(object):
                 )
             else:
                 # If the file doesn't exist, look for credentials in an environment variable
-                credentials_json = os.environ.get('BQ_GOOGLE_CREDENTIALS')
-                if not credentials_json:
+                credentials_json_encoded = os.environ.get('BQ_GOOGLE_CREDENTIALS')
+                credentials_json = base64.b64decode(credentials_json_encoded).decode('utf-8')
+                if not credentials_json_encoded:
                     raise ValueError(
                         "Neither BQ_GOOGLE_CREDENTIALS file nor GOOGLE_CREDENTIALS_JSON environment variable is set")
 
