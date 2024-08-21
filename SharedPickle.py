@@ -12,11 +12,13 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from dotenv import load_dotenv
 from pathlib import Path, WindowsPath, PosixPath
 
+from DBWriter import DBWriter
+
 load_dotenv()
 
 # Constants
 DIRECTORY_YEAR = "2024"
-PICKLE_NAME = f"{DIRECTORY_YEAR}_pickle_test.pickle"
+PICKLE_NAME = f"{DIRECTORY_YEAR}_pickle.pickle"
 PICKLE_DIRECTORY = "H:\\Shared drives\\Stomato\\" + DIRECTORY_YEAR + "\\Pickle\\"
 
 # SHARED_DRIVE_ID = '0ACxUDm7mZyTVUk9PVA' # test
@@ -232,6 +234,7 @@ def get_grower(grower_name: str):
             return grower
 
 
+
 def get_field(field_name: str, grower_name: str = ''):
     """
     Function to get a field
@@ -251,6 +254,31 @@ def get_field(field_name: str, grower_name: str = ''):
             for field in grower.fields:
                 if field.name == field_name:
                     return field
+
+def get_project(field_name: str, grower_name: str = ''):
+    """
+    Function to get a fields project
+
+    :param field_name: String for the field name
+    :param grower_name: Optional parameter of the string for the grower name
+    :return: Project of the field
+    """
+    dbw = DBWriter()
+    if grower_name:
+        grower = get_grower(grower_name)
+        for field in grower.fields:
+            if field.name == field_name:
+                crop_type = field.loggers[-1].crop_type
+                project = dbw.get_db_project(crop_type)
+                return project
+    else:
+        growers = open_pickle()
+        for grower in growers:
+            for field in grower.fields:
+                if field.name == field_name:
+                    crop_type = field.loggers[-1].crop_type
+                    project = dbw.get_db_project(crop_type)
+                    return project
 
 
 # Example usage in your Slack bot

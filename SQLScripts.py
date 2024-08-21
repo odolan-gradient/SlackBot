@@ -1784,6 +1784,95 @@ def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str,
     print()
 
 
+def get_values_for_date(project, field_name, logger_name, date):
+    """
+    Get vwc_1, vwc_2, vwc_3 values for a specific date from the DB.
+    """
+    field_name = dbwriter.remove_unwanted_chars_for_db_dataset(field_name)
+    dataset_id = project + '.' + field_name + '.' + logger_name
+    dataset_id = "`" + dataset_id + "`"
+
+    date_s = date.strftime("%Y-%m-%d")
+    date_s = "'" + date_s + "'"
+
+    # Query to get values for the specific date
+    query = f"""
+    SELECT vwc_1, vwc_2, vwc_3, field_capacity, wilting_point
+    FROM {dataset_id}
+    WHERE date = {date_s}
+    """
+
+    rows = dbwriter.run_dml(query, project=project)
+
+    # Convert the RowIterator to a list
+    result = list(rows)
+
+    if result:
+        return result[0]
+    else:
+        return None
+
+
+def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_date):
+    field_name = dbwriter.remove_unwanted_chars_for_db_dataset(field_name)
+
+    dataset_id = project + '.' + field_name + '.' + logger_name
+    dataset_id = "`" + dataset_id + "`"
+
+    start_date_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    end_date_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    start_date_prev_day = start_date_dt - timedelta(days=1)
+
+    # Fetch values from the day before start_date
+    previous_day_values = get_values_for_date(project, field_name, logger_name, start_date_prev_day)
+
+    if previous_day_values:
+        vwc_1_value, vwc_2_value, vwc_3_value, fc, wp = previous_day_values
+        current_date = start_date_dt
+
+        while current_date <= end_date_dt:
+            current_date_s = current_date.strftime("%Y-%m-%d")
+            current_date_s = "'" + current_date_s + "'"
+
+            # Check if data exists for the current date
+            check_query = f"""
+            SELECT COUNT(*) as count
+            FROM {dataset_id}
+            WHERE date = {current_date_s}
+            """
+
+            check_rows = dbwriter.run_dml(check_query, project=project)
+            check_result = list(check_rows)
+            if check_result and check_result[0][0] == 0:
+                # No data exists for this date insert a new row
+                insert_dml = (
+                    f"INSERT INTO {dataset_id} "
+                    f"(date, vwc_1, vwc_2, vwc_3, field_capacity, wilting_point) "
+                    f"VALUES ({current_date_s}, {vwc_1_value}, {vwc_2_value}, {vwc_3_value}, {fc}, {wp})"
+                )
+                dbwriter.run_dml(insert_dml, project=project)
+                print(f'Inserted new row for date: {current_date_s}')
+            else:
+                # Update existing row
+                update_dml = (
+                    f"UPDATE {dataset_id} "
+                    f"SET vwc_1 = {vwc_1_value}, "
+                    f"    vwc_2 = {vwc_2_value}, "
+                    f"    vwc_3 = {vwc_3_value}, "
+                    f"    field_capacity = {fc}, "
+                    f"    wilting_point = {wp} "
+                    f"WHERE date = {current_date_s}"
+                )
+                dbwriter.run_dml(update_dml, project=project)
+                print(f'Updated row for date: {current_date_s}')
+
+            current_date += timedelta(days=1)
+
+        print('Date range update completed.')
+    else:
+        print('No values found for the day before the start_date')
+
+
 
 
 # Decagon.show_pickle()
@@ -2008,4 +2097,4 @@ def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str,
 # update_field_portal_report_and_images('Lucero Ryer Island4')
 # update_field_portal_report_and_images('Lucero Rio VistaS South', preview_url='https://i.imgur.com/KZsthm9.png', report_url='https://lookerstudio.google.com/reporting/64fe5e52-69a9-4a05-a5d5-fa7c9eb6984a')
 # copy_missing_data_to_logger_from_other_logger('Lucero LatropLTP7 9', )
-copy_last_day_from_old_date_to_new_date('stomato-2024', 'Lucero LathropLTP 7 9', 'LA-7-C', '2024-07-28', '2024-07-29')
+# update_vwc_for_date_range('stomato-2024', 'Lucero Rio VistaB West', 'RV-B-C', '2024-07-23', '2024-07-23')

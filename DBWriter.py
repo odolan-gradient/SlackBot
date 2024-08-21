@@ -1,3 +1,5 @@
+import json
+import os
 from pathlib import Path
 
 from google.cloud import bigquery
@@ -37,16 +39,39 @@ class DBWriter(object):
         return table_id
 
     def grab_bq_client(self, my_project):
+        # First, try to get the path to the credentials file
         directory_path = Path().absolute()
-        key_path = Path.joinpath(directory_path, 'credentials.json')
-        # print(directory_path)
-        # key_path = 'C:/Users/javie/PycharmProjects/Stomato/credentials.json'
-        credentials = service_account.Credentials.from_service_account_file(
-            key_path, scopes=["https://www.googleapis.com/auth/cloud-platform"],
-        )
+        credentials_path = Path.joinpath(directory_path, 'credentials_file.json')
+        try:
+            if credentials_path and os.path.exists(credentials_path):
+                # If the file exists, use it
+                credentials = service_account.Credentials.from_service_account_file(
+                    credentials_path,
+                    scopes=["https://www.googleapis.com/auth/cloud-platform"],
+                )
+            else:
+                # If the file doesn't exist, look for credentials in an environment variable
+                credentials_json = os.environ.get('BQ_GOOGLE_CREDENTIALS')
+                if not credentials_json:
+                    raise ValueError(
+                        "Neither BQ_GOOGLE_CREDENTIALS file nor GOOGLE_CREDENTIALS_JSON environment variable is set")
 
-        client = bigquery.Client(credentials=credentials, project=my_project)
-        return client
+                # Parse the JSON string from the environment variable
+                credentials_info = json.loads(credentials_json)
+                credentials = service_account.Credentials.from_service_account_info(
+                    credentials_info,
+                    scopes=["https://www.googleapis.com/auth/cloud-platform"],
+                )
+
+            client = bigquery.Client(credentials=credentials, project=my_project)
+            return client
+
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Credentials file not found at {credentials_path}")
+        except json.JSONDecodeError:
+            raise ValueError("Invalid JSON in GOOGLE_CREDENTIALS_JSON environment variable")
+        except ValueError as e:
+            raise ValueError(f"Error with credentials: {str(e)}")
 
     def write_to_table_from_csv(self, dataset_id, table_id, filename, schema, project, overwrite=False):
         # print('\t- writing to table')

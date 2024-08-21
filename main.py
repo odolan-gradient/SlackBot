@@ -8,7 +8,9 @@ from slack_bolt import App
 from slack_bolt.adapter.flask import SlackRequestHandler
 
 import DBWriter
+import SQLScripts
 import SharedPickle
+import SheetsHandler
 
 load_dotenv()
 
@@ -27,13 +29,11 @@ grower_names = [grower.name for grower in growers]
 fields = [field.name for grower in growers for field in grower.fields]
 
 
-
-
 @app.command("/menu")
 def main_menu_command(ack, body, respond):
     ack()
 
-    menu_options = ['Get Soil Type', 'Change Soil Type', 'Turn on PSI', 'Show Pickle']
+    menu_options = ['Get Soil Type', 'Change Soil Type', 'Turn on PSI', 'Show Pickle', 'Use Previous Days VWC']
     main_menu(ack, respond, menu_options)
 
 
@@ -48,6 +48,21 @@ def generate_options(list_of_items):
         } for item in list_of_items
     ]
 
+@app.action("menu_select")
+def handle_main_menu(ack, body, respond):
+    ack()
+
+    menu_option = body['actions'][0]['selected_option']['value']
+    if menu_option == 'Change Soil Type':
+        change_soil_menu(ack, respond)
+    elif menu_option == 'Get Soil Type':
+        get_soil_menu(ack, respond)
+    elif menu_option == 'Turn on PSI':
+        turn_on_psi_menu(ack, respond)
+    elif menu_option == 'Show Pickle':
+        show_pickle_menu(ack, respond)
+    elif menu_option == 'Use Previous Days VWC':
+        use_prev_days_menu(ack, respond)
 
 @app.action("get_soil_type")
 def handle_get_soil(ack, body, respond):
@@ -79,10 +94,12 @@ def handle_soil_change_selections(ack, body, respond):
     user_id = body['user']['id']
     action_id = body['actions'][0]['action_id']
 
+    # Instantiate the user selections
     if action_id == 'soil_select':
         selected_option = body['actions'][0]['selected_option']['value']
         user_selections[user_id][action_id] = selected_option
-    elif action_id == 'logger_select_change_soil' or action_id == 'logger_select_psi':  # logger_select
+
+    elif action_id in ['logger_select_change_soil', 'logger_select_psi']:  # logger_select
         selected_options = body['actions'][0]['selected_options']
         user_selections[user_id][action_id] = [option['value'] for option in selected_options]
 
@@ -93,6 +110,11 @@ def handle_soil_change_selections(ack, body, respond):
         field = user_selections[user_id]['field']
         grower = user_selections[user_id]['grower']
         grower_name = grower.name
+
+        # Log the request to Google Sheets
+        request_name = action_id
+        info = ', '.join(loggers)
+        SheetsHandler.log_request_to_sheet(request_name, info)
 
         for logger in loggers:
             change_logger_soil_type(logger, field, grower_name, soil_type)
@@ -107,6 +129,12 @@ def handle_soil_change_selections(ack, body, respond):
         field = user_selections[user_id]['field']
         grower = user_selections[user_id]['grower']
         grower_name = grower.name
+
+        # Log the request to Google Sheets
+        request_name = action_id
+        info = loggers
+        SheetsHandler.log_request_to_sheet(request_name, info)
+
         for logger in loggers:
             turn_on_psi(grower_name, field, logger)
         response_text = f"Activing IR on following loggers:\nLoggers: {', '.join(loggers)}"
@@ -118,8 +146,54 @@ def handle_soil_change_selections(ack, body, respond):
         pass
 
 
+@app.action("logger_select_prev_day")
+@app.action("start_date_select")
+@app.action("end_date_select")
+def handle_prev_day_selections(ack, body, respond):
+    ack()
+    user_id = body['user']['id']
+    action_id = body['actions'][0]['action_id']
+
+    # Instantiate the user selections
+    if action_id == 'logger_select_prev_day':  # Logger select
+        selected_options = body['actions'][0]['selected_options']
+        user_selections[user_id][action_id] = [option['value'] for option in selected_options]
+    elif action_id in ['start_date_select', 'end_date_select']:
+        selected_date = body['actions'][0]['selected_date']
+        user_selections[user_id][action_id] = selected_date
+
+    # Check if all selections are complete
+    if 'logger_select_prev_day' in user_selections[user_id] and 'start_date_select' in user_selections[
+        user_id] and 'end_date_select' in user_selections[user_id]:
+        loggers = user_selections[user_id]['logger_select_prev_day']
+        start_date = user_selections[user_id]['start_date_select']
+        end_date = user_selections[user_id]['end_date_select']
+        field = user_selections[user_id]['field']
+        grower = user_selections[user_id]['grower']
+        grower_name = grower.name
+        project = SharedPickle.get_project(field, grower_name)
+
+        # Log the request to Google Sheets
+        request_name = 'logger_select_prev_day'
+        info = ', '.join(loggers)
+        SheetsHandler.log_request_to_sheet(request_name, info)
+
+        for logger in loggers:
+            SQLScripts.update_vwc_for_date_range(project, field, logger, start_date, end_date)
+        response_text = f"Using previous day VWC for the following:\nLoggers: {', '.join(loggers)}"
+        respond(text=response_text)
+
+        # Clear the selections for this user
+        del user_selections[user_id]
+
+    else:
+        # If both selections aren't complete, don't respond yet
+        pass
+
+
 @app.action("field_select_change_soil")
 @app.action("field_select_psi")
+@app.action("field_select_prev_day")
 def handle_field_select(ack, body, respond):
     ack()
     # Extract values from the actions
@@ -138,6 +212,7 @@ def handle_field_select(ack, body, respond):
         soil_types = ['Sand', 'Loamy Sand', 'Sandy Loam', 'Sandy Clay Loam', 'Loam', 'Sandy Clay', 'Silt Loam', 'Silt',
                       'Clay Loam', 'Silty Clay Loam', 'Silty Clay', 'Clay']
         logger_and_soil_list_menu(ack, respond, logger_list, soil_types)
+
     elif callback_id == 'field_select_psi':
         psi_action_id = 'logger_select_psi'
         response = {
@@ -147,14 +222,19 @@ def handle_field_select(ack, body, respond):
             ]
         }
         respond(response)
+    elif callback_id == 'field_select_prev_day':
+        logger_and_dates_menu(ack, respond, logger_list)
+
 
 
 def fix_ampersand(text):
     return text.replace('&amp;', '&')
 
+
 @app.action("grower_select_psi")
 @app.action("grower_select_change_soil")
 @app.action("grower_select_show")
+@app.action("grower_select_prev_day")
 def handle_grower_menu(ack, body, respond):
     ack()
 
@@ -173,10 +253,21 @@ def handle_grower_menu(ack, body, respond):
     if grower_action_id == 'grower_select_psi':
         action_id = 'field_select_psi'
         field_list_menu(ack, respond, field_list, action_id)
+
     elif grower_action_id == 'grower_select_change_soil':
         action_id = 'field_select_change_soil'
         field_list_menu(ack, respond, field_list, action_id)
+
+    elif grower_action_id == 'grower_select_prev_day':
+        action_id = 'field_select_prev_day'
+        field_list_menu(ack, respond, field_list, action_id)
+
     elif grower_action_id == 'grower_select_show':
+        # Log the request to Google Sheets
+        request_name = grower_action_id
+        info = selected_value
+        SheetsHandler.log_request_to_sheet(request_name, info)
+
         grower = SharedPickle.get_grower(selected_value)
         pickle_contents = grower.to_string()
         chunks = [pickle_contents[i:i + 16000] for i in range(0, len(pickle_contents), 16000)]
@@ -186,20 +277,6 @@ def handle_grower_menu(ack, body, respond):
                 "text": chunk
             })
 
-
-@app.action("menu_select")
-def handle_main_menu(ack, body, respond):
-    ack()
-
-    menu_option = body['actions'][0]['selected_option']['value']
-    if menu_option == 'Change Soil Type':
-        change_soil_menu(ack, respond)
-    elif menu_option == 'Get Soil Type':
-        get_soil_menu(ack, respond)
-    elif menu_option == 'Turn on PSI':
-        turn_on_psi_menu(ack, respond)
-    elif menu_option == 'Show Pickle':
-        show_pickle_menu(ack, respond)
 
 
 
@@ -244,6 +321,7 @@ def field_list_menu(ack, respond, field_list, action_id):
 
     respond(response)
 
+
 def logger_and_soil_list_menu(ack, respond, logger_list, soil_types):
     ack()
     logger_action_id = 'logger_select_change_soil'
@@ -270,24 +348,83 @@ def logger_and_soil_list_menu(ack, respond, logger_list, soil_types):
 
     respond(blocks=blocks)
 
-def logger_select_block(logger_list, action_id):
-        return {
+
+def logger_and_dates_menu(ack, respond, logger_list):
+    print("logger_and_dates_menu function called")
+    ack()
+
+    # Define the logger block
+    logger_action_id = 'logger_select_prev_day'
+    logger_block = logger_select_block(logger_list, logger_action_id)
+    print(f"logger_block: {logger_block}")
+
+    # Define the date picker blocks
+    date_range_blocks = [
+        {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "Choose logger(s) to change"
+                "text": "Choose Start Date"
             },
             "accessory": {
-                "type": "multi_static_select",
+                "type": "datepicker",
                 "placeholder": {
                     "type": "plain_text",
-                    "text": "Select logger(s)",
+                    "text": "Select Start Date",
                     "emoji": True
                 },
-                "options": generate_options(logger_list),
-                "action_id": action_id
+                "action_id": "start_date_select",
+                "initial_date": "2024-01-01"  # Optional: initial date for the picker
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "Choose End Date"
+            },
+            "accessory": {
+                "type": "datepicker",
+                "placeholder": {
+                    "type": "plain_text",
+                    "text": "Select End Date",
+                    "emoji": True
+                },
+                "action_id": "end_date_select",
+                "initial_date": "2024-01-02"  # Optional: initial date for the picker
             }
         }
+    ]
+
+    # Combine logger block and date picker blocks
+    blocks = [logger_block] + date_range_blocks
+
+    try:
+        respond(blocks=blocks)
+        print("Response sent successfully")
+
+    except Exception as e:
+        print(f"Error in respond function: {e}")
+
+
+def logger_select_block(logger_list, action_id):
+    return {
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": "Choose logger(s) to change"
+        },
+        "accessory": {
+            "type": "multi_static_select",
+            "placeholder": {
+                "type": "plain_text",
+                "text": "Select logger(s)",
+                "emoji": True
+            },
+            "options": generate_options(logger_list),
+            "action_id": action_id
+        }
+    }
 
 
 def main_menu(ack, respond, menu_options):
@@ -298,7 +435,7 @@ def main_menu(ack, respond, menu_options):
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "Menu"
+                "text": "Menu Updated"
             },
             "accessory": {
                 "type": "static_select",
@@ -360,6 +497,7 @@ def get_soil_menu(ack, respond):
         text="Get Soil Type"
     )
 
+
 def show_pickle_menu(ack, respond):
     ack()
     action_id = 'grower_select_show'
@@ -372,6 +510,22 @@ def show_pickle_menu(ack, respond):
     }
 
     respond(response)
+
+
+def use_prev_days_menu(ack, respond):
+    ack()
+    action_id = 'grower_select_prev_day'
+    response = {
+        "response_type": "in_channel",
+        "text": "Use Previous Days VWC",
+        "attachments": [
+            grower_select_block(grower_names, action_id)
+        ]
+    }
+
+    respond(response)
+
+
 def grower_select_block(grower_names, action_id):
     return {
         "text": "Choose Grower",
@@ -388,6 +542,8 @@ def grower_select_block(grower_names, action_id):
             }
         ]
     }
+
+
 def turn_on_psi_menu(ack, respond):
     ack()
     action_id = 'grower_select_psi'
@@ -402,10 +558,7 @@ def turn_on_psi_menu(ack, respond):
     respond(response)
 
 
-
-
 def turn_on_psi(grower_name, field_name, logger_name):
-
     growers = SharedPickle.open_pickle()
     for grower in growers:
         if grower.name == grower_name:
@@ -416,6 +569,7 @@ def turn_on_psi(grower_name, field_name, logger_name):
                             logger.ir_active = True
                             print(f'IR activated for {logger.name}')
     SharedPickle.write_pickle(growers)
+
 
 def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str, new_soil_type: str):
     """
@@ -460,6 +614,7 @@ def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str,
     print()
     print(f'Soil type for {logger_name} changed from {old_soil_type} to {new_soil_type}')
     print()
+
 
 def get_soil_type_from_coords(latitude, longitude):
     """
@@ -520,14 +675,17 @@ def get_soil_type_from_coords(latitude, longitude):
     else:
         print(f"Error: {response.status_code}, {response.text}")
 
+
 # Entry point for Google Cloud Functions
 @flask_app.route('/slack/events', methods=['POST'])
 def slack_events():
     return handler.handle(request)
 
+
 # The function that Google Cloud Functions will call
 def slack_bot(request):
     return slack_events()
+
 
 # If you want to run locally (not needed for Cloud Functions)
 if __name__ == "__main__":
