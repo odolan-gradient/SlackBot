@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 import base64
+from dotenv import load_dotenv
 
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
@@ -16,6 +17,7 @@ DATABASE_YEAR = DIRECTORY_YEAR
 LOGGERS_BIGQUERY_PROJECT = 'stomato-' + DATABASE_YEAR
 LOGGERS_PERMANENT_BIGQUERY_PROJECT = 'stomato-permanents'
 
+load_dotenv()
 
 class DBWriter(object):
 
@@ -42,7 +44,7 @@ class DBWriter(object):
     def grab_bq_client(self, my_project):
         # First, try to get the path to the credentials file
         directory_path = Path().absolute()
-        credentials_path = Path.joinpath(directory_path, 'credentials_file.json')
+        credentials_path = Path.joinpath(directory_path, 'credentials_file1.json')
         try:
             if credentials_path and os.path.exists(credentials_path):
                 # If the file exists, use it
@@ -53,11 +55,12 @@ class DBWriter(object):
             else:
                 # If the file doesn't exist, look for credentials in an environment variable
                 credentials_json_encoded = os.environ.get('BQ_GOOGLE_CREDENTIALS')
-                credentials_json = base64.b64decode(credentials_json_encoded).decode('utf-8')
                 if not credentials_json_encoded:
                     raise ValueError(
                         "Neither BQ_GOOGLE_CREDENTIALS file nor GOOGLE_CREDENTIALS_JSON environment variable is set")
-
+                credentials_json = base64.b64decode(credentials_json_encoded).decode('utf-8')
+                print('credentials_json_encoded' + credentials_json_encoded)
+                print('credentials_json' + credentials_json)
                 # Parse the JSON string from the environment variable
                 credentials_info = json.loads(credentials_json)
                 credentials = service_account.Credentials.from_service_account_info(
