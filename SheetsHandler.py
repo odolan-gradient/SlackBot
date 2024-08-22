@@ -24,12 +24,12 @@ def get_drive_service():
     return service
 
 
-def log_request_to_sheet(request_name, info):
+def log_request_to_sheet(request_name, user, info):
     """Log the request name, info, and timestamp to Google Sheets."""
     service = get_drive_service()
 
     spreadsheet_id = '1nXrjbexLmSwdu5yE0Q42cQwQpWeS4j0i25-_rj5wSss'
-    range_name = 'Sheet1!A:C'
+    range_name = 'Sheet1!A:D'
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -40,7 +40,7 @@ def log_request_to_sheet(request_name, info):
         except:
             info = str(info)
 
-    values = [[request_name, info, timestamp]]
+    values = [[request_name, user, info, timestamp]]
     body = {
         'values': values
     }

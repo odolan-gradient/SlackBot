@@ -115,7 +115,8 @@ def handle_soil_and_psi_selections(ack, body, respond):
         # Log the request to Google Sheets
         request_name = action_id
         info = ', '.join(loggers)
-        SheetsHandler.log_request_to_sheet(request_name, info)
+        username = body['user']['name']
+        SheetsHandler.log_request_to_sheet(request_name, username, info)
 
         for logger in loggers:
             change_logger_soil_type(logger, field, grower_name, soil_type)
@@ -134,7 +135,8 @@ def handle_soil_and_psi_selections(ack, body, respond):
         # Log the request to Google Sheets
         request_name = action_id
         info = loggers
-        SheetsHandler.log_request_to_sheet(request_name, info)
+        username = body['user']['name']
+        SheetsHandler.log_request_to_sheet(request_name, username, info)
 
         for logger in loggers:
             turn_on_psi(grower_name, field, logger)
@@ -177,7 +179,8 @@ def handle_prev_day_selections(ack, body, respond):
         # Log the request to Google Sheets
         request_name = 'logger_select_prev_day'
         info = ', '.join(loggers)
-        SheetsHandler.log_request_to_sheet(request_name, info)
+        username = body['user']['name']
+        SheetsHandler.log_request_to_sheet(request_name, username, info)
 
         for logger in loggers:
             SQLScripts.update_vwc_for_date_range(project, field, logger, start_date, end_date)
@@ -267,7 +270,8 @@ def handle_grower_menu(ack, body, respond):
         # Log the request to Google Sheets
         request_name = grower_action_id
         info = selected_value
-        SheetsHandler.log_request_to_sheet(request_name, info)
+        username = body['user']['name']
+        SheetsHandler.log_request_to_sheet(request_name, username, info)
 
         grower = SharedPickle.get_grower(selected_value)
         pickle_contents = grower.to_string()
