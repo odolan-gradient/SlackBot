@@ -59,8 +59,6 @@ class DBWriter(object):
                     raise ValueError(
                         "Neither BQ_GOOGLE_CREDENTIALS file nor GOOGLE_CREDENTIALS_JSON environment variable is set")
                 credentials_json = base64.b64decode(credentials_json_encoded).decode('utf-8')
-                print('credentials_json_encoded' + credentials_json_encoded)
-                print('credentials_json' + credentials_json)
                 # Parse the JSON string from the environment variable
                 credentials_info = json.loads(credentials_json)
                 credentials = service_account.Credentials.from_service_account_info(

@@ -30,6 +30,7 @@ fields = [field.name for grower in growers for field in grower.fields]
 
 
 @app.command("/menu")
+@app.command("/test")
 def main_menu_command(ack, body, respond):
     ack()
 
@@ -89,7 +90,7 @@ def handle_get_soil(ack, body, respond):
 @app.action("soil_select")
 @app.action("logger_select_change_soil")
 @app.action("logger_select_psi")
-def handle_soil_change_selections(ack, body, respond):
+def handle_soil_and_psi_selections(ack, body, respond):
     ack()
     user_id = body['user']['id']
     action_id = body['actions'][0]['action_id']
@@ -435,7 +436,7 @@ def main_menu(ack, respond, menu_options):
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "Menu Updated"
+                "text": "Menu"
             },
             "accessory": {
                 "type": "static_select",
@@ -694,4 +695,5 @@ if __name__ == "__main__":
 # if __name__ == "__main__":
 #     app.start(port=int(os.getenv("PORT", 3000)))
 
-# https://oyster-app-yycv8.ondigitalocean.app/slack/events
+# https://seal-app-er6sr.ondigitalocean.app/slack/events
+# interactivity is the one that determines the debug

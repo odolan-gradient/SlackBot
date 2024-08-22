@@ -578,8 +578,11 @@ def show_pickle(filename: str = PICKLE_NAME, specific_file_path: str = PICKLE_DI
     """
     data = open_pickle(filename=filename, specific_file_path=specific_file_path)
     print("PICKLE CONTENTS")
+    pickle_contents = ''
     for d in data:
-        d.to_string()
+        pickle_contents += d.to_string()
+    print(pickle_contents)
+    return pickle_contents
 
 
 def only_certain_growers_update(
@@ -3871,3 +3874,5 @@ def update_historical_et_stations():
 
 # subtract_from_dxd_mrid()
 # generate_gradient_grower_fields_report()
+# open_pickle("2024_pickle_test.pickle")
+# show_pickle(filename="2024_pickle_test.pickle")

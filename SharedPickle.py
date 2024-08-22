@@ -23,7 +23,7 @@ PICKLE_DIRECTORY = "H:\\Shared drives\\Stomato\\" + DIRECTORY_YEAR + "\\Pickle\\
 
 # SHARED_DRIVE_ID = '0ACxUDm7mZyTVUk9PVA' # test
 SHARED_DRIVE_ID = '13PoBmmfF0VqVRzkF0CRjdr2kGX127zKg'  # real
-# PICKLE_FILE_ID = '1h9fu1mZa9pzQLDOIjEpejBz8zKpbMtyG' # test
+# PICKLE_FILE_ID = '1Of6gKTyZCKZDic01dBuq-mNEOug006xd'  # test
 PICKLE_FILE_ID = '13UlHaHO5321uofAnhBZ25Ft4FKRWWujE'  # real
 # CREDENTIALS_FILE = r'C:\Users\odolan\PycharmProjects\SlackBot\client_secret_creds.json'
 
@@ -67,36 +67,6 @@ credentials_info = {
     "universe_domain": "googleapis.com"
 }
 
-
-class CustomUnpickler(pickle.Unpickler):
-    def find_class(self, module, name):
-        if module == 'pathlib' and name == 'WindowsPath':
-            return Path  # Replace WindowsPath with a generic Path (PosixPath on Unix systems)
-        return super().find_class(module, name)
-
-
-def custom_load(file_obj):
-    return CustomUnpickler(file_obj).load()
-
-
-def open_pickle(file_id=PICKLE_FILE_ID):
-    try:
-        request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
-        fh = io.BytesIO()
-        downloader = MediaIoBaseDownload(fh, request)
-
-        done = False
-        while not done:
-            status, done = downloader.next_chunk()
-
-        fh.seek(0)
-        data = custom_load(fh)  # Use the custom loader to handle WindowsPath
-        return data
-    except Exception as e:
-        print(f"Error reading from Shared Drive: {e}")
-        return None
-
-
 def get_drive_service():
     credentials = service_account.Credentials.from_service_account_info(
         credentials_info, scopes=['https://www.googleapis.com/auth/drive'])
@@ -108,6 +78,98 @@ def get_drive_service():
 # Use the service
 service = get_drive_service()
 
+
+def convert_path(obj):
+    """Recursively convert WindowsPath to PosixPath and vice versa."""
+    if isinstance(obj, (WindowsPath, PosixPath)):
+        return Path(*obj.parts)
+    elif isinstance(obj, dict):
+        return {convert_path(k): convert_path(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_path(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(convert_path(item) for item in obj)
+    return obj
+
+
+class CustomUnpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        if module == "pathlib" and name in ["WindowsPath", "PosixPath"]:
+            return Path
+        return super().find_class(module, name)
+
+
+def convert_path(obj):
+    """Recursively convert WindowsPath to PosixPath and vice versa."""
+    if isinstance(obj, Path):
+        return Path(*obj.parts)
+    elif isinstance(obj, dict):
+        return {convert_path(k): convert_path(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_path(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(convert_path(item) for item in obj)
+    return obj
+
+
+def open_pickle(file_id=PICKLE_FILE_ID, service=service):
+    if service is None:
+        # Initialize the service here if not provided
+        # You might want to add your service initialization code here
+        pass
+
+    try:
+        request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+
+        fh.seek(0)
+
+        # Use CustomUnpickler to load the data
+        unpickler = CustomUnpickler(fh)
+        data = unpickler.load()
+
+        # Convert any remaining path objects to the current system's path type
+        data = convert_path(data)
+
+        return data
+    except Exception as e:
+        print(f"Error reading from Shared Drive: {e}")
+        return None
+
+
+def write_pickle(data, file_id=PICKLE_FILE_ID, service=service):
+    if service is None:
+        # Initialize the service here if not provided
+        # You might want to add your service initialization code here
+        pass
+
+    try:
+        # Convert paths to the current system's path type before writing
+        data = convert_path(data)
+
+        # Pickle the data to a BytesIO object
+        fh = io.BytesIO()
+        pickle.dump(data, fh)
+        fh.seek(0)
+
+        media = MediaIoBaseUpload(fh, mimetype='application/octet-stream', resumable=True)
+
+        file = service.files().update(
+            fileId=file_id,
+            media_body=media,
+            supportsAllDrives=True
+        ).execute()
+
+        print(f"Data written to Shared Drive with file ID: {file.get('id')}")
+        return file.get('id')
+    except Exception as e:
+        print(f"Error writing to Shared Drive: {e}")
+        return None
 
 def list_files():
     # List all files that the service account has access to
@@ -148,65 +210,7 @@ def list_shared_drive_files(drive_id=SHARED_DRIVE_ID):
         print(f'An error occurred: {error}')
 
 
-def download_pickle(file_id=PICKLE_FILE_ID):
-    """
-    Function to download a pickle file from Google Drive and load its content.
-    """
-    request = service.files().get_media(fileId=file_id)
-    fh = io.BytesIO()
-    downloader = MediaIoBaseDownload(fh, request)
-
-    done = False
-    while done is False:
-        status, done = downloader.next_chunk()
-        print(f"Download {int(status.progress() * 100)}%.")
-
-    fh.seek(0)
-    return pickle.load(fh)
-
-
-def write_pickle(data, filename: str = PICKLE_NAME, file_id=PICKLE_FILE_ID):
-    """
-    Function to upload a pickle file to Google Drive, completely replacing the old data.
-    """
-    try:
-        # Serialize data to a pickle in memory
-        pickle_data = io.BytesIO()
-        pickle.dump(data, pickle_data)
-        pickle_data.seek(0)  # Go to the start of the BytesIO buffer
-
-        media = MediaIoBaseUpload(pickle_data, mimetype='application/octet-stream', resumable=True)
-
-        if file_id:
-            # Update the existing file
-            file = service.files().update(
-                fileId=file_id,
-                media_body=media,
-                supportsAllDrives=True,
-                fields='id'
-            ).execute()
-        else:
-            # Create a new file
-            file_metadata = {
-                'name': filename,
-                'parents': [SHARED_DRIVE_ID],
-                'driveId': SHARED_DRIVE_ID
-            }
-            file = service.files().create(
-                body=file_metadata,
-                media_body=media,
-                supportsAllDrives=True,
-                fields='id'
-            ).execute()
-
-        print(f"Pickle {'updated' if file_id else 'created'} in Shared Drive with file ID: {file.get('id')}")
-        return file.get('id')
-    except Exception as e:
-        print(f"Error writing to Shared Drive: {e}")
-        return None
-
-
-def show_pickle(filename: str = PICKLE_NAME):
+def show_pickle():
     """
         Function to print out the contents of the pickle.
 
@@ -294,5 +298,7 @@ def slack_bot(request):
 def main(request):
     return slack_bot(request)
 
+# growers = open_pickle()
+# write_pickle(growers)
 # show_pickle()
 # list_shared_drive_files()
