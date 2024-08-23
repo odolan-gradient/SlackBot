@@ -67,6 +67,7 @@ credentials_info = {
     "universe_domain": "googleapis.com"
 }
 
+
 def get_drive_service():
     credentials = service_account.Credentials.from_service_account_info(
         credentials_info, scopes=['https://www.googleapis.com/auth/drive'])
@@ -79,34 +80,30 @@ def get_drive_service():
 service = get_drive_service()
 
 
-def convert_path(obj):
-    """Recursively convert WindowsPath to PosixPath and vice versa."""
-    if isinstance(obj, (WindowsPath, PosixPath)):
-        return Path(*obj.parts)
-    elif isinstance(obj, dict):
-        return {convert_path(k): convert_path(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_path(item) for item in obj]
-    elif isinstance(obj, tuple):
-        return tuple(convert_path(item) for item in obj)
-    return obj
-
-
 class CustomUnpickler(pickle.Unpickler):
     def find_class(self, module, name):
         if module == "pathlib" and name == "WindowsPath":
-            return WindowsPath
+            # On Unix systems, interpret WindowsPath as a regular Path (PosixPath)
+            return Path
         elif module == "pathlib" and name == "PosixPath":
             return PosixPath
         return super().find_class(module, name)
 
 
-def open_pickle(file_id=PICKLE_FILE_ID, service=service):
-    if service is None:
-        # Initialize the service here if not provided
-        # You might want to add your service initialization code here
-        pass
+def convert_to_windows_path(obj):
+    """Recursively convert Path objects to WindowsPath."""
+    if isinstance(obj, Path) and not isinstance(obj, WindowsPath):
+        return WindowsPath(*obj.parts)
+    elif isinstance(obj, dict):
+        return {convert_to_windows_path(k): convert_to_windows_path(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_to_windows_path(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(convert_to_windows_path(item) for item in obj)
+    return obj
 
+
+def open_pickle(file_id=PICKLE_FILE_ID, service=service):
     try:
         request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
         fh = io.BytesIO()
@@ -118,12 +115,9 @@ def open_pickle(file_id=PICKLE_FILE_ID, service=service):
 
         fh.seek(0)
 
-        # Use CustomUnpickler to load the data
+        # Use CustomUnpickler to load the data, treating WindowsPath as Path
         unpickler = CustomUnpickler(fh)
         data = unpickler.load()
-
-        # Convert any remaining path objects to the current system's path type
-        data = convert_path(data)
 
         return data
     except Exception as e:
@@ -131,12 +125,16 @@ def open_pickle(file_id=PICKLE_FILE_ID, service=service):
         return None
 
 
-def write_pickle(data, file_id=PICKLE_FILE_ID, service=service):
+def write_pickle(data, file_id=PICKLE_FILE_ID, service=None):
     if service is None:
+        # Initialize the service here if not provided
+        # You might want to add your service initialization code here
         pass
 
     try:
-        # Pickle the data to a BytesIO object
+        # Convert Path objects back to WindowsPath before writing
+        data = convert_to_windows_path(data)
+
         fh = io.BytesIO()
         pickle.dump(data, fh)
         fh.seek(0)
@@ -154,6 +152,7 @@ def write_pickle(data, file_id=PICKLE_FILE_ID, service=service):
     except Exception as e:
         print(f"Error writing to Shared Drive: {e}")
         return None
+
 
 def list_files():
     # List all files that the service account has access to
@@ -222,7 +221,6 @@ def get_grower(grower_name: str):
             return grower
 
 
-
 def get_field(field_name: str, grower_name: str = ''):
     """
     Function to get a field
@@ -242,6 +240,7 @@ def get_field(field_name: str, grower_name: str = ''):
             for field in grower.fields:
                 if field.name == field_name:
                     return field
+
 
 def get_project(field_name: str, grower_name: str = ''):
     """
@@ -284,5 +283,5 @@ def main(request):
 
 # growers = open_pickle()
 # write_pickle(growers)
-# show_pickle()
+show_pickle()
 # list_shared_drive_files()
