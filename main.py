@@ -32,10 +32,13 @@ fields = [field.name for grower in growers for field in grower.fields]
 @app.command("/menu")
 @app.command("/test")
 def main_menu_command(ack, body, respond):
-    ack()
-
-    menu_options = ['Get Soil Type', 'Change Soil Type', 'Turn on PSI', 'Show Pickle', 'Use Previous Days VWC']
-    main_menu(ack, respond, menu_options)
+    try:
+        ack()
+        menu_options = ['Get Soil Type', 'Change Soil Type', 'Turn on PSI', 'Show Pickle', 'Use Previous Days VWC']
+        main_menu(ack, respond, menu_options)
+    except Exception as e:
+        print(f"Error: {e}")
+        respond("An error occurred while processing your request.")
 
 
 def generate_options(list_of_items):
@@ -82,6 +85,13 @@ def handle_get_soil(ack, body, respond):
     if len(coords) == 2:
         lat, long = coords
         soil = get_soil_type_from_coords(lat, long)
+
+        # Log the request to Google Sheets
+        request_name = 'Get Soil Type'
+        info = [lat, long, soil]
+        username = body['user']['name']
+        SheetsHandler.log_request_to_sheet(request_name, username, info)
+
         respond(f"Soil type at {coords}: \n\t{soil}")
     else:
         respond("Error: Coordinates should be in the format 'latitude longitude' or 'latitude,longitude'.")
@@ -113,7 +123,7 @@ def handle_soil_and_psi_selections(ack, body, respond):
         grower_name = grower.name
 
         # Log the request to Google Sheets
-        request_name = action_id
+        request_name = 'Change Soil Type'
         info = ', '.join(loggers)
         username = body['user']['name']
         SheetsHandler.log_request_to_sheet(request_name, username, info)
@@ -133,7 +143,7 @@ def handle_soil_and_psi_selections(ack, body, respond):
         grower_name = grower.name
 
         # Log the request to Google Sheets
-        request_name = action_id
+        request_name = 'Turn on PSI'
         info = loggers
         username = body['user']['name']
         SheetsHandler.log_request_to_sheet(request_name, username, info)
@@ -177,7 +187,7 @@ def handle_prev_day_selections(ack, body, respond):
         project = SharedPickle.get_project(field, grower_name)
 
         # Log the request to Google Sheets
-        request_name = 'logger_select_prev_day'
+        request_name = 'Use Previous Days VWC'
         info = ', '.join(loggers)
         username = body['user']['name']
         SheetsHandler.log_request_to_sheet(request_name, username, info)
@@ -268,7 +278,7 @@ def handle_grower_menu(ack, body, respond):
 
     elif grower_action_id == 'grower_select_show':
         # Log the request to Google Sheets
-        request_name = grower_action_id
+        request_name = 'Show Pickle'
         info = selected_value
         username = body['user']['name']
         SheetsHandler.log_request_to_sheet(request_name, username, info)
@@ -281,7 +291,6 @@ def handle_grower_menu(ack, body, respond):
                 "response_type": "in_channel",
                 "text": chunk
             })
-
 
 
 
