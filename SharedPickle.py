@@ -94,22 +94,11 @@ def convert_path(obj):
 
 class CustomUnpickler(pickle.Unpickler):
     def find_class(self, module, name):
-        if module == "pathlib" and name in ["WindowsPath", "PosixPath"]:
-            return Path
+        if module == "pathlib" and name == "WindowsPath":
+            return WindowsPath
+        elif module == "pathlib" and name == "PosixPath":
+            return PosixPath
         return super().find_class(module, name)
-
-
-def convert_path(obj):
-    """Recursively convert WindowsPath to PosixPath and vice versa."""
-    if isinstance(obj, Path):
-        return Path(*obj.parts)
-    elif isinstance(obj, dict):
-        return {convert_path(k): convert_path(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_path(item) for item in obj]
-    elif isinstance(obj, tuple):
-        return tuple(convert_path(item) for item in obj)
-    return obj
 
 
 def open_pickle(file_id=PICKLE_FILE_ID, service=service):
@@ -144,14 +133,9 @@ def open_pickle(file_id=PICKLE_FILE_ID, service=service):
 
 def write_pickle(data, file_id=PICKLE_FILE_ID, service=service):
     if service is None:
-        # Initialize the service here if not provided
-        # You might want to add your service initialization code here
         pass
 
     try:
-        # Convert paths to the current system's path type before writing
-        data = convert_path(data)
-
         # Pickle the data to a BytesIO object
         fh = io.BytesIO()
         pickle.dump(data, fh)

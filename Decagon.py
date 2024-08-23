@@ -3876,3 +3876,4 @@ def update_historical_et_stations():
 # generate_gradient_grower_fields_report()
 # open_pickle("2024_pickle_test.pickle")
 # show_pickle(filename="2024_pickle_test.pickle")
+show_pickle()
