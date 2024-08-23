@@ -285,18 +285,18 @@ def handle_grower_menu(ack, body, respond):
 
         grower = SharedPickle.get_grower(selected_value)
         pickle_contents = grower.to_string()
-        if len(pickle_contents) > 16000:
-            chunks = [pickle_contents[i:i + 16000] for i in range(0, len(pickle_contents), 16000)]
-            for chunk in chunks:
-                respond({
-                    "response_type": "in_channel",
-                    "text": chunk
-                })
-        else:
-            respond({
-                "response_type": "in_channel",
-                "text": pickle_contents
-            })
+        # if len(pickle_contents) > 16000:
+        #     chunks = [pickle_contents[i:i + 16000] for i in range(0, len(pickle_contents), 16000)]
+        #     for chunk in chunks:
+        #         respond({
+        #             "response_type": "in_channel",
+        #             "text": chunk
+        #         })
+        # else:
+        respond({
+            "response_type": "in_channel",
+            "text": pickle_contents
+        })
 
 
 def change_soil_menu(ack, respond):
