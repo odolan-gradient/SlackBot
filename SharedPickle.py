@@ -10,9 +10,13 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from dotenv import load_dotenv
-from pathlib import Path, WindowsPath, PosixPath
-
+from pathlib import Path, PosixPath
 from DBWriter import DBWriter
+
+try:
+    from pathlib import WindowsPath
+except ImportError:
+    WindowsPath = None  # WindowsPath is not available on this system
 
 load_dotenv()
 
@@ -83,23 +87,23 @@ service = get_drive_service()
 class CustomUnpickler(pickle.Unpickler):
     def find_class(self, module, name):
         if module == "pathlib" and name == "WindowsPath":
-            # On Unix systems, interpret WindowsPath as a regular Path (PosixPath)
-            return Path
-        elif module == "pathlib" and name == "PosixPath":
-            return PosixPath
+            return Path  # Use Path, which will be PosixPath on Unix
         return super().find_class(module, name)
 
 
-def convert_to_windows_path(obj):
-    """Recursively convert Path objects to WindowsPath."""
-    if isinstance(obj, Path) and not isinstance(obj, WindowsPath):
-        return WindowsPath(*obj.parts)
+def convert_to_original_path(obj):
+    """Recursively convert Path objects to their original type (WindowsPath or PosixPath)."""
+    if isinstance(obj, Path):
+        if os.name == 'nt':  # Windows
+            return WindowsPath(*obj.parts) if not isinstance(obj, WindowsPath) else obj
+        else:  # Unix/Linux
+            return PosixPath(*obj.parts) if not isinstance(obj, PosixPath) else obj
     elif isinstance(obj, dict):
-        return {convert_to_windows_path(k): convert_to_windows_path(v) for k, v in obj.items()}
+        return {convert_to_original_path(k): convert_to_original_path(v) for k, v in obj.items()}
     elif isinstance(obj, list):
-        return [convert_to_windows_path(item) for item in obj]
+        return [convert_to_original_path(item) for item in obj]
     elif isinstance(obj, tuple):
-        return tuple(convert_to_windows_path(item) for item in obj)
+        return tuple(convert_to_original_path(item) for item in obj)
     return obj
 
 
@@ -114,8 +118,6 @@ def open_pickle(file_id=PICKLE_FILE_ID, service=service):
             status, done = downloader.next_chunk()
 
         fh.seek(0)
-
-        # Use CustomUnpickler to load the data, treating WindowsPath as Path
         unpickler = CustomUnpickler(fh)
         data = unpickler.load()
 
@@ -125,16 +127,12 @@ def open_pickle(file_id=PICKLE_FILE_ID, service=service):
         return None
 
 
-def write_pickle(data, file_id=PICKLE_FILE_ID, service=None):
-    if service is None:
-        # Initialize the service here if not provided
-        # You might want to add your service initialization code here
-        pass
-
+def write_pickle(data, file_id=PICKLE_FILE_ID, service=service):
     try:
-        # Convert Path objects back to WindowsPath before writing
-        data = convert_to_windows_path(data)
+        # Convert paths back to original type before writing
+        data = convert_to_original_path(data)
 
+        # Pickle the data to a BytesIO object
         fh = io.BytesIO()
         pickle.dump(data, fh)
         fh.seek(0)
@@ -280,6 +278,7 @@ def slack_bot(request):
 # Entry point for Google Cloud Functions
 def main(request):
     return slack_bot(request)
+
 
 # growers = open_pickle()
 # write_pickle(growers)
