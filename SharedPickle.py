@@ -11,12 +11,11 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from dotenv import load_dotenv
 from pathlib import Path, PosixPath
-from DBWriter import DBWriter
-
 try:
     from pathlib import WindowsPath
 except ImportError:
     WindowsPath = None  # WindowsPath is not available on this system
+from DBWriter import DBWriter
 
 load_dotenv()
 
@@ -27,8 +26,8 @@ PICKLE_DIRECTORY = "H:\\Shared drives\\Stomato\\" + DIRECTORY_YEAR + "\\Pickle\\
 
 # SHARED_DRIVE_ID = '0ACxUDm7mZyTVUk9PVA' # test
 SHARED_DRIVE_ID = '13PoBmmfF0VqVRzkF0CRjdr2kGX127zKg'  # real
-PICKLE_FILE_ID = '1Of6gKTyZCKZDic01dBuq-mNEOug006xd'  # test
-# PICKLE_FILE_ID = '13UlHaHO5321uofAnhBZ25Ft4FKRWWujE'  # real
+# PICKLE_FILE_ID = '1Of6gKTyZCKZDic01dBuq-mNEOug006xd'  # test
+PICKLE_FILE_ID = '13UlHaHO5321uofAnhBZ25Ft4FKRWWujE'  # real
 # CREDENTIALS_FILE = r'C:\Users\odolan\PycharmProjects\SlackBot\client_secret_creds.json'
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
@@ -84,29 +83,20 @@ def get_drive_service():
 service = get_drive_service()
 
 
-# TODO pickle path issues still occurring
-class WindowsPathSubstitute:
-    def __init__(self, *args):
-        self.parts = args
-
-    def __repr__(self):
-        return f"WindowsPath('{'/'.join(self.parts)}')"
-
-
 class CustomUnpickler(pickle.Unpickler):
     def find_class(self, module, name):
         if module == "pathlib" and name == "WindowsPath":
-            return WindowsPathSubstitute
+            # On Unix systems, interpret WindowsPath as a regular Path (PosixPath)
+            return Path
+        elif module == "pathlib" and name == "PosixPath":
+            return PosixPath
         return super().find_class(module, name)
 
 
 def convert_to_windows_path(obj):
-    """Recursively convert Path objects to WindowsPath or WindowsPathSubstitute."""
-    if isinstance(obj, (Path, WindowsPathSubstitute)):
-        if WindowsPath is not type(None):
-            return WindowsPath(*obj.parts)
-        else:
-            return WindowsPathSubstitute(*obj.parts)
+    """Recursively convert Path objects to WindowsPath."""
+    if isinstance(obj, Path) and not isinstance(obj, WindowsPath):
+        return WindowsPath(*obj.parts)
     elif isinstance(obj, dict):
         return {convert_to_windows_path(k): convert_to_windows_path(v) for k, v in obj.items()}
     elif isinstance(obj, list):
@@ -127,6 +117,8 @@ def open_pickle(file_id=PICKLE_FILE_ID, service=service):
             status, done = downloader.next_chunk()
 
         fh.seek(0)
+
+        # Use CustomUnpickler to load the data, treating WindowsPath as Path
         unpickler = CustomUnpickler(fh)
         data = unpickler.load()
 
@@ -136,12 +128,16 @@ def open_pickle(file_id=PICKLE_FILE_ID, service=service):
         return None
 
 
-def write_pickle(data, file_id=PICKLE_FILE_ID, service=service):
+def write_pickle(data, file_id=PICKLE_FILE_ID, service=None):
+    if service is None:
+        # Initialize the service here if not provided
+        # You might want to add your service initialization code here
+        pass
+
     try:
-        # Convert paths to WindowsPath or WindowsPathSubstitute before writing
+        # Convert Path objects back to WindowsPath before writing
         data = convert_to_windows_path(data)
 
-        # Pickle the data to a BytesIO object
         fh = io.BytesIO()
         pickle.dump(data, fh)
         fh.seek(0)
@@ -287,7 +283,6 @@ def slack_bot(request):
 # Entry point for Google Cloud Functions
 def main(request):
     return slack_bot(request)
-
 
 # growers = open_pickle()
 # write_pickle(growers)
