@@ -64,6 +64,7 @@ def handle_main_menu(ack, body, respond):
     elif menu_option == 'Turn on PSI':
         turn_on_psi_menu(ack, respond)
     elif menu_option == 'Show Pickle':
+        # TODO need to fix the chunks issue > 16000
         show_pickle_menu(ack, respond)
     elif menu_option == 'Use Previous Days VWC':
         use_prev_days_menu(ack, respond)
