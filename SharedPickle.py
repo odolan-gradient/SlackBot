@@ -10,7 +10,8 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from dotenv import load_dotenv
-from pathlib import Path, PosixPath
+from pathlib import Path, PosixPath, PureWindowsPath
+
 try:
     from pathlib import WindowsPath
 except ImportError:
@@ -26,8 +27,8 @@ PICKLE_DIRECTORY = "H:\\Shared drives\\Stomato\\" + DIRECTORY_YEAR + "\\Pickle\\
 
 # SHARED_DRIVE_ID = '0ACxUDm7mZyTVUk9PVA' # test
 SHARED_DRIVE_ID = '13PoBmmfF0VqVRzkF0CRjdr2kGX127zKg'  # real
-# PICKLE_FILE_ID = '1Of6gKTyZCKZDic01dBuq-mNEOug006xd'  # test
-PICKLE_FILE_ID = '13UlHaHO5321uofAnhBZ25Ft4FKRWWujE'  # real
+PICKLE_FILE_ID = '1Of6gKTyZCKZDic01dBuq-mNEOug006xd'  # test
+# PICKLE_FILE_ID = '13UlHaHO5321uofAnhBZ25Ft4FKRWWujE'  # real
 # CREDENTIALS_FILE = r'C:\Users\odolan\PycharmProjects\SlackBot\client_secret_creds.json'
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
@@ -79,30 +80,28 @@ def get_drive_service():
     return service
 
 
-# Use the service
 service = get_drive_service()
 
 
 class CustomUnpickler(pickle.Unpickler):
     def find_class(self, module, name):
         if module == "pathlib" and name == "WindowsPath":
-            # On Unix systems, interpret WindowsPath as a regular Path (PosixPath)
-            return Path
+            return PureWindowsPath
         elif module == "pathlib" and name == "PosixPath":
             return PosixPath
         return super().find_class(module, name)
 
 
-def convert_to_windows_path(obj):
-    """Recursively convert Path objects to WindowsPath."""
-    if isinstance(obj, Path) and not isinstance(obj, WindowsPath):
-        return WindowsPath(*obj.parts)
+def convert_to_pure_windows_path(obj):
+    """Recursively convert Path objects to PureWindowsPath."""
+    if isinstance(obj, (Path, PosixPath, PureWindowsPath)):
+        return PureWindowsPath(*obj.parts)
     elif isinstance(obj, dict):
-        return {convert_to_windows_path(k): convert_to_windows_path(v) for k, v in obj.items()}
+        return {convert_to_pure_windows_path(k): convert_to_pure_windows_path(v) for k, v in obj.items()}
     elif isinstance(obj, list):
-        return [convert_to_windows_path(item) for item in obj]
+        return [convert_to_pure_windows_path(item) for item in obj]
     elif isinstance(obj, tuple):
-        return tuple(convert_to_windows_path(item) for item in obj)
+        return tuple(convert_to_pure_windows_path(item) for item in obj)
     return obj
 
 
@@ -118,7 +117,7 @@ def open_pickle(file_id=PICKLE_FILE_ID, service=service):
 
         fh.seek(0)
 
-        # Use CustomUnpickler to load the data, treating WindowsPath as Path
+        # Use CustomUnpickler to load the data, treating WindowsPath as PureWindowsPath
         unpickler = CustomUnpickler(fh)
         data = unpickler.load()
 
@@ -128,15 +127,10 @@ def open_pickle(file_id=PICKLE_FILE_ID, service=service):
         return None
 
 
-def write_pickle(data, file_id=PICKLE_FILE_ID, service=None):
-    if service is None:
-        # Initialize the service here if not provided
-        # You might want to add your service initialization code here
-        pass
-
+def write_pickle(data, file_id=PICKLE_FILE_ID, service=service):
     try:
-        # Convert Path objects back to WindowsPath before writing
-        data = convert_to_windows_path(data)
+        # Convert Path objects to PureWindowsPath before writing
+        data = convert_to_pure_windows_path(data)
 
         fh = io.BytesIO()
         pickle.dump(data, fh)
@@ -283,6 +277,7 @@ def slack_bot(request):
 # Entry point for Google Cloud Functions
 def main(request):
     return slack_bot(request)
+
 
 # growers = open_pickle()
 # write_pickle(growers)
