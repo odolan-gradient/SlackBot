@@ -250,7 +250,7 @@ def fix_ampersand(text):
 @app.action("grower_select_change_soil")
 @app.action("grower_select_show")
 @app.action("grower_select_prev_day")
-def handle_grower_menu(ack, body, respond):
+def handle_grower_menu(ack, body, client, respond):
     ack()
 
     # Extract values from the actions
@@ -286,18 +286,21 @@ def handle_grower_menu(ack, body, respond):
 
         grower = SharedPickle.get_grower(selected_value)
         pickle_contents = grower.to_string()
-        # if len(pickle_contents) > 16000:
-        #     chunks = [pickle_contents[i:i + 16000] for i in range(0, len(pickle_contents), 16000)]
-        #     for chunk in chunks:
-        #         respond({
-        #             "response_type": "in_channel",
-        #             "text": chunk
-        #         })
-        # else:
-        respond({
-            "response_type": "in_channel",
-            "text": pickle_contents
-        })
+
+        if len(pickle_contents) > 16000:
+            chunks = [pickle_contents[i:i + 16000] for i in range(0, len(pickle_contents), 16000)]
+            for chunk in chunks:
+                client.chat_postMessage(
+                    channel=body['channel']['id'],
+                    text=chunk,
+                    as_user=True
+                )
+        else:
+            client.chat_postMessage(
+                channel=body['channel']['id'],
+                text=pickle_contents,
+                as_user=True
+            )
 
 
 def change_soil_menu(ack, respond):
