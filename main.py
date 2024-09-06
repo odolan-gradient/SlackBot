@@ -34,7 +34,7 @@ fields = [field.name for grower in growers for field in grower.fields]
 def main_menu_command(ack, body, respond):
     try:
         ack()
-        menu_options = ['Get Soil Type', 'Change Soil Type', 'Turn on PSI', 'Show Pickle', 'Use Previous Days VWC']
+        menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Show Pickle', 'Use Previous Days VWC']
         main_menu(ack, respond, menu_options)
     except Exception as e:
         print(f"Error: {e}")
@@ -61,7 +61,7 @@ def handle_main_menu(ack, body, respond):
         change_soil_menu(ack, respond)
     elif menu_option == 'Get Soil Type':
         get_soil_menu(ack, respond)
-    elif menu_option == 'Turn on PSI':
+    elif menu_option == 'Toggle PSI':
         turn_on_psi_menu(ack, respond)
     elif menu_option == 'Show Pickle':
         # TODO need to fix the chunks issue > 16000
@@ -144,14 +144,14 @@ def handle_soil_and_psi_selections(ack, body, respond):
         grower_name = grower.name
 
         # Log the request to Google Sheets
-        request_name = 'Turn on PSI'
+        request_name = 'Toggle PSI'
         info = loggers
         username = body['user']['name']
         SheetsHandler.log_request_to_sheet(request_name, username, info)
 
+        response_text = ''
         for logger in loggers:
-            turn_on_psi(grower_name, field, logger)
-        response_text = f"Activing IR on following loggers:\nLoggers: {', '.join(loggers)}"
+            response_text += toggle_psi(grower_name, field, logger)
         respond(text=response_text)
         # Clear the selections for this user
         del user_selections[user_id]
@@ -581,7 +581,8 @@ def turn_on_psi_menu(ack, respond):
     respond(response)
 
 
-def turn_on_psi(grower_name, field_name, logger_name):
+def toggle_psi(grower_name, field_name, logger_name):
+    response_text = ''
     growers = SharedPickle.open_pickle()
     for grower in growers:
         if grower.name == grower_name:
@@ -589,8 +590,12 @@ def turn_on_psi(grower_name, field_name, logger_name):
                 if field.name == field_name:
                     for logger in field.loggers:
                         if logger.name == logger_name:
-                            logger.ir_active = True
-                            print(f'IR activated for {logger.name}')
+                            if logger.ir_active:  # if On
+                                response_text += f'Turned Off IR for {logger.name}\n'
+                                logger.ir_active = False
+                            if not logger.ir_active:
+                                response_text = f'Turned On IR for {logger.name}\n'
+                                logger.ir_active = True
     SharedPickle.write_pickle(growers)
 
 
