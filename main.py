@@ -597,6 +597,7 @@ def toggle_psi(grower_name, field_name, logger_name):
                                 response_text = f'Turned On IR for {logger.name}\n'
                                 logger.ir_active = True
     SharedPickle.write_pickle(growers)
+    return response_text
 
 
 def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str, new_soil_type: str):
