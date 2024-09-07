@@ -590,10 +590,10 @@ def toggle_psi(grower_name, field_name, logger_name):
                 if field.name == field_name:
                     for logger in field.loggers:
                         if logger.name == logger_name:
-                            if logger.ir_active:  # if On
+                            if logger.ir_active == True:  # if On
                                 response_text += f'Turned Off IR for {logger.name}\n'
                                 logger.ir_active = False
-                            if not logger.ir_active:
+                            if logger.ir_active == False:
                                 response_text = f'Turned On IR for {logger.name}\n'
                                 logger.ir_active = True
     SharedPickle.write_pickle(growers)
