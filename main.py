@@ -52,6 +52,7 @@ def generate_options(list_of_items):
         } for item in list_of_items
     ]
 
+
 @app.action("menu_select")
 def handle_main_menu(ack, body, respond):
     ack()
@@ -68,6 +69,7 @@ def handle_main_menu(ack, body, respond):
         show_pickle_menu(ack, respond)
     elif menu_option == 'Use Previous Days VWC':
         use_prev_days_menu(ack, respond)
+
 
 @app.action("get_soil_type")
 def handle_get_soil(ack, body, respond):
@@ -100,7 +102,6 @@ def handle_get_soil(ack, body, respond):
 
 @app.action("soil_select")
 @app.action("logger_select_change_soil")
-@app.action("logger_select_psi")
 def handle_soil_and_psi_selections(ack, body, respond):
     ack()
     user_id = body['user']['id']
@@ -137,12 +138,36 @@ def handle_soil_and_psi_selections(ack, body, respond):
         # Clear the selections for this user
         del user_selections[user_id]
 
-    elif 'logger_select_psi' in user_selections[user_id]:
+    else:
+        # If both selections aren't complete, don't respond yet
+        pass
+
+
+@app.action("logger_select_psi")
+@app.action("psi_on")
+@app.action("psi_off")
+def handle_toggle_psi(ack, body, respond):
+    ack()
+    user_id = body['user']['id']
+    action_id = ''
+    if 'action_id' in body['actions'][0]:
+        action_id = body['actions'][0]['action_id']
+
+    if action_id == 'logger_select_psi':  # logger_select
+        selected_options = body['actions'][0]['selected_options']
+        user_selections[user_id][action_id] = [option['value'] for option in selected_options]
+    elif action_id in ['psi_on', 'psi_off']:  # on or off
+        user_selections[user_id][action_id] = body['actions'][0]['value']
+
+    if 'logger_select_psi' in user_selections[user_id] and ('psi_on' in user_selections[user_id] or 'psi_off' in user_selections[user_id]):
         loggers = user_selections[user_id]['logger_select_psi']
         field = user_selections[user_id]['field']
         grower = user_selections[user_id]['grower']
         grower_name = grower.name
-
+        if 'psi_on' in user_selections[user_id]:
+            on_or_off = user_selections[user_id]['psi_on']
+        elif 'psi_off' in user_selections[user_id]:
+            on_or_off = user_selections[user_id]['psi_off']
         # Log the request to Google Sheets
         request_name = 'Toggle PSI'
         info = loggers
@@ -151,13 +176,11 @@ def handle_soil_and_psi_selections(ack, body, respond):
 
         response_text = ''
         for logger in loggers:
-            response_text += toggle_psi(grower_name, field, logger)
+            response_text += toggle_psi(grower_name, field, logger, on_or_off)
+        SharedPickle.write_pickle(growers)
         respond(text=response_text)
         # Clear the selections for this user
         del user_selections[user_id]
-    else:
-        # If both selections aren't complete, don't respond yet
-        pass
 
 
 @app.action("logger_select_prev_day")
@@ -229,17 +252,16 @@ def handle_field_select(ack, body, respond):
         logger_and_soil_list_menu(ack, respond, logger_list, soil_types)
 
     elif callback_id == 'field_select_psi':
-        psi_action_id = 'logger_select_psi'
+        # psi_action_id = 'logger_select_psi'
+        blocks = logger_and_toggle_menu(logger_list)
         response = {
             "response_type": "in_channel",
-            "blocks": [
-                logger_select_block(logger_list, psi_action_id)
-            ]
+            "blocks": blocks
         }
         respond(response)
+        # logger_and_toggle_menu(ack, respond, logger_list)
     elif callback_id == 'field_select_prev_day':
         logger_and_dates_menu(ack, respond, logger_list)
-
 
 
 def fix_ampersand(text):
@@ -370,6 +392,55 @@ def logger_and_soil_list_menu(ack, respond, logger_list, soil_types):
     ]
 
     respond(blocks=blocks)
+
+
+def logger_and_toggle_menu(logger_list):
+
+    # Define the logger block
+    logger_action_id = 'logger_select_psi'
+    logger_block = logger_select_block(logger_list, logger_action_id)
+
+    # Define the toggle block for PSI On/Off
+    toggle_block = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "Turn PSI On:"
+            },
+            "accessory": {
+                "type": "button",
+                "text": {
+                    "type": "plain_text",
+                    "text": "PSI On"
+                },
+                "action_id": "psi_on",
+                "value": "on",
+                "style": "primary"
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "Turn PSI Off:"
+            },
+            "accessory": {
+                "type": "button",
+                "text": {
+                    "type": "plain_text",
+                    "text": "PSI Off"
+                },
+                "action_id": "psi_off",
+                "value": "off",
+                "style": "danger"
+            }
+        }
+    ]
+
+    # Combine logger block and toggle block
+    blocks = [logger_block] + toggle_block
+    return blocks
 
 
 def logger_and_dates_menu(ack, respond, logger_list):
@@ -570,9 +641,10 @@ def grower_select_block(grower_names, action_id):
 def turn_on_psi_menu(ack, respond):
     ack()
     action_id = 'grower_select_psi'
+
     response = {
         "response_type": "in_channel",
-        "text": "Turn on Logger PSI",
+        "text": "Select PSI setting and Grower:",
         "attachments": [
             grower_select_block(grower_names, action_id)
         ]
@@ -581,24 +653,22 @@ def turn_on_psi_menu(ack, respond):
     respond(response)
 
 
-def toggle_psi(grower_name, field_name, logger_name):
+def toggle_psi(grower_name, field_name, logger_name, psi_toggle):
     response_text = ''
-    growers = SharedPickle.open_pickle()
     for grower in growers:
         if grower.name == grower_name:
             for field in grower.fields:
                 if field.name == field_name:
                     for logger in field.loggers:
                         if logger.name == logger_name:
-                            if logger.ir_active:  # if On
+                            if psi_toggle == 'off':  # if On
                                 response_text += f'Turned Off IR for {logger.name}\n'
                                 logger.ir_active = False
                                 continue
-                            if not logger.ir_active:
+                            if psi_toggle == 'on':
                                 response_text += f'Turned On IR for {logger.name}\n'
                                 logger.ir_active = True
                                 continue
-    SharedPickle.write_pickle(growers)
     return response_text
 
 
