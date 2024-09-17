@@ -34,7 +34,7 @@ fields = [field.name for grower in growers for field in grower.fields]
 def main_menu_command(ack, body, respond):
     try:
         ack()
-        menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Show Pickle', 'Use Previous Days VWC']
+        menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Show Pickle', 'Use Previous Days VWC', 'Add Grower Billing']
         main_menu(ack, respond, menu_options)
     except Exception as e:
         print(f"Error: {e}")
@@ -65,10 +65,11 @@ def handle_main_menu(ack, body, respond):
     elif menu_option == 'Toggle PSI':
         turn_on_psi_menu(ack, respond)
     elif menu_option == 'Show Pickle':
-        # TODO need to fix the chunks issue > 16000
         show_pickle_menu(ack, respond)
     elif menu_option == 'Use Previous Days VWC':
         use_prev_days_menu(ack, respond)
+    elif menu_option == 'Add Grower Billing':
+        add_billing_menu(ack, respond)
 
 
 @app.action("get_soil_type")
@@ -272,6 +273,7 @@ def fix_ampersand(text):
 @app.action("grower_select_change_soil")
 @app.action("grower_select_show")
 @app.action("grower_select_prev_day")
+@app.action("grower_select_billing")
 def handle_grower_menu(ack, body, client, respond):
     ack()
 
@@ -298,6 +300,14 @@ def handle_grower_menu(ack, body, client, respond):
     elif grower_action_id == 'grower_select_prev_day':
         action_id = 'field_select_prev_day'
         field_list_menu(ack, respond, field_list, action_id)
+
+    elif grower_action_id == 'grower_select_billing':
+        result = SheetsHandler.billing_report(grower.name)
+        link = 'https://docs.google.com/spreadsheets/d/137KpyvSKY_LCqiups4EAcwMQPYHV_a55bjwRQAMEX_k/edit?gid=0#gid=0'
+        if result:
+            respond(f'Added {grower.name} to the sheet\nView here: {link}')
+        elif not result:
+            respond(f'{grower.name} already in the sheet\nView here: {link}')
 
     elif grower_action_id == 'grower_select_show':
         # Log the request to Google Sheets
@@ -612,6 +622,19 @@ def use_prev_days_menu(ack, respond):
     response = {
         "response_type": "in_channel",
         "text": "Use Previous Days VWC",
+        "attachments": [
+            grower_select_block(grower_names, action_id)
+        ]
+    }
+
+    respond(response)
+
+def add_billing_menu(ack, respond):
+    ack()
+    action_id = 'grower_select_billing'
+    response = {
+        "response_type": "in_channel",
+        "text": "Add Grower to Billing Sheet",
         "attachments": [
             grower_select_block(grower_names, action_id)
         ]
