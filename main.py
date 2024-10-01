@@ -202,7 +202,7 @@ def handle_prev_day_selections(ack, body, respond):
         user_selections[user_id][action_id] = selected_date
     elif action_id in ['vwc_depth_select']:
         selected_vwc = body['actions'][0]['selected_options']
-        user_selections[user_id][action_id] = selected_vwc
+        user_selections[user_id][action_id] = [option['value'] for option in selected_vwc]
 
     # Check if all selections are complete
     if 'logger_select_prev_day' in user_selections[user_id] and 'start_date_select' in user_selections[
