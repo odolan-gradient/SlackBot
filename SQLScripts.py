@@ -22,6 +22,7 @@ dbwriter = DBWriter()
 DIRECTORY_YEAR = "2023"
 PICKLE_DIRECTORY = "H:\\Shared drives\\Stomato\\" + DIRECTORY_YEAR + "\\Pickle\\"
 
+
 def update_value_for_date(project, field_name, logger_name, date, value_name, value):
     dml = 'UPDATE `' + str(project) + '.' + str(field_name) + '.' + str(logger_name) + '`' \
           + ' SET ' + str(value_name) + ' = ' + str(value) \
@@ -82,6 +83,7 @@ def update_irrigation_hours_for_date(project, field_name, logger_name, daily_hou
     dbwriter.run_dml(dml, project=project)
     print("Done Updating Irr. Hours")
 
+
 # update_irrigation_hours_for_date('stomato-2023', 'Lucero Mandeville17 I J', 'LM-17J-S', 4.2, '2023-08-08')
 # update_irrigation_hours_for_date('stomato-2023', 'Lucero Mandeville17 I J', 'LM-17J-S', 5.1, '2023-08-10')
 # update_irrigation_hours_for_date('stomato-2023', 'Lucero Mandeville17 I J', 'LM-17J-S', 3.5, '2023-08-12')
@@ -102,6 +104,8 @@ def update_irrigation_inches_for_whole_table(project, field_name, logger_name):
     # print(dml)
     dbwriter.run_dml(dml, project=project)
     print("Done Updating Irr. Inches")
+
+
 # update_irr_inches_for_date('stomato-2023', 'Lucero Dillard RoadD4', 'DI-D4-W')
 
 
@@ -127,6 +131,7 @@ def update_irrigation_hours_for_date_range(project, field_name, logger_name, dai
           + str(daily_inches) + " WHERE date BETWEEN DATE('" + start_date + "') AND DATE('" + end_date + "') "
     dbwriter.run_dml(dml, project=project)
     print("Done Updating Irr. Hours")
+
 
 def update_eto_etc(project, field_name, logger_name, list_etos, start_date, end_date):
     field_name = dbwriter.remove_unwanted_chars_for_db_dataset(field_name)
@@ -246,7 +251,6 @@ def copy_values_from_table_to_table():
             hours = e["daily_hours"]
             switch = e["daily_switch"]
 
-
             dml = "UPDATE `stomato-permanents.Riley_Chaney_Farms16.RC-16-W` " \
                   + " SET daily_switch = " + str(switch) + \
                   ", daily_hours = " + str(hours) + \
@@ -309,24 +313,24 @@ def merge_table_into_table_updating_some_values(main_dataset_id: str, merge_data
     # date, daily_inches, daily_hours, daily_switch, canopy_temperature, ambient_temperature, vpd, psi, sdd, rh, lowest_ambient_temperature
 
     dml = "MERGE `" + main_dataset_id + "` T " \
-        + "USING `" + merge_dataset_id + "` S " \
-        + "ON (t.date = s.date AND T.date > '2024-01-01') " \
-        + "WHEN MATCHED THEN " \
-        + "UPDATE SET " \
-          "daily_inches = s.daily_inches, " \
-          "daily_hours = s.daily_hours," \
-          "daily_switch = s.daily_switch, " \
-          "canopy_temperature = s.canopy_temperature, " \
-          "ambient_temperature = s.ambient_temperature, " \
-          "vpd = s.vpd, " \
-          "psi = s.psi, " \
-          "sdd = s.sdd, " \
-          "rh = s.rh, " \
-          "lowest_ambient_temperature = s.lowest_ambient_temperature"
+          + "USING `" + merge_dataset_id + "` S " \
+          + "ON (t.date = s.date AND T.date > '2024-01-01') " \
+          + "WHEN MATCHED THEN " \
+          + "UPDATE SET " \
+            "daily_inches = s.daily_inches, " \
+            "daily_hours = s.daily_hours," \
+            "daily_switch = s.daily_switch, " \
+            "canopy_temperature = s.canopy_temperature, " \
+            "ambient_temperature = s.ambient_temperature, " \
+            "vpd = s.vpd, " \
+            "psi = s.psi, " \
+            "sdd = s.sdd, " \
+            "rh = s.rh, " \
+            "lowest_ambient_temperature = s.lowest_ambient_temperature"
     result = dbwriter.run_dml(dml, project='stomato-permanents')
 
-# merge_table_into_table_updating_some_values('stomato-permanents.Barrios_Farms22.BF-22-NW2', 'stomato-permanents.Barrios_Farms22.BF-22-NW')
 
+# merge_table_into_table_updating_some_values('stomato-permanents.Barrios_Farms22.BF-22-NW2', 'stomato-permanents.Barrios_Farms22.BF-22-NW')
 
 
 def daterange(start_date, end_date):
@@ -549,17 +553,17 @@ def add_column_to_db_grower_portal_logger_table(column_name_and_type_dict: dict,
     growers = Decagon.open_pickle()
     for g in growers:
         # if g.name == 'Surjit Chahal':
-            dataset_name = dbwriter.remove_unwanted_chars_for_db_dataset(g.name)
-            table_name = 'loggers'
+        dataset_name = dbwriter.remove_unwanted_chars_for_db_dataset(g.name)
+        table_name = 'loggers'
 
-            print(dataset_name, table_name)
+        print(dataset_name, table_name)
 
-            for val in column_name_and_type_dict:
-                try:
-                    dbwriter.add_new_column_to_table(dataset_name, table_name, val, column_name_and_type_dict[val],
-                                                     project=project)
-                except:
-                    print(f'Error when trying to add column to table {dataset_name}.{table_name}')
+        for val in column_name_and_type_dict:
+            try:
+                dbwriter.add_new_column_to_table(dataset_name, table_name, val, column_name_and_type_dict[val],
+                                                 project=project)
+            except:
+                print(f'Error when trying to add column to table {dataset_name}.{table_name}')
 
 
 # db_column = {
@@ -919,6 +923,7 @@ def setup_irrigation_scheduling_db(etStation: str, fieldName: str):
     Decagon.update_irr_scheduling(field_name + '_Irr_Scheduling', field_name, csv_data, overwrite=True,
                                   logger=logger)
 
+
 def returnHistoricalETDict(etStation: str, start_date: date, end_date: date) -> dict:
     """
     #TODO: adjust returnHistoricalETDict for new naming schema of Hist ET tables
@@ -939,7 +944,7 @@ def returnHistoricalETDict(etStation: str, start_date: date, end_date: date) -> 
     return etValue
 
 
-def move_logger_db_info(project:str, field_name:str, new_logger_name:str, old_logger_name:str):
+def move_logger_db_info(project: str, field_name: str, new_logger_name: str, old_logger_name: str):
     """
     Use if copying data from an old logger to a new logger table
     :param project: Big Query Project
@@ -1103,11 +1108,11 @@ def fix_weather_db(field):
     date = year + "-" + month + "-" + day
     # print(date)
 
-    dml_statement = ("Update `" + project + "." + dataset + " as t" + " Set t.order = 99 where t.date < " + "'" + date + "'")
+    dml_statement = (
+                "Update `" + project + "." + dataset + " as t" + " Set t.order = 99 where t.date < " + "'" + date + "'")
     dbwriter.run_dml(dml_statement, project=project)
     print(f"Finished fixing weather for {field.name}")
     # print(dml_statement)
-
 
 
 def returnHistoricalData(etStation):
@@ -1322,7 +1327,8 @@ def fill_missing_et(et_list: list, index: list[int]):
     return et_list
 
 
-def copy_missing_data_to_logger_from_other_logger(field_name: str, logger_destination_name: str, logger_source_name: str):
+def copy_missing_data_to_logger_from_other_logger(field_name: str, logger_destination_name: str,
+                                                  logger_source_name: str):
     """
     :param field_name: Name of field
     :param logger_destination_name: Name of logger that is missing data
@@ -1403,7 +1409,7 @@ def select_first_psi_for_all_datasets():
         else:
             for table in tables_list:
                 # print(table.table_id)
-                if table.table_id == 'weather_forecast' or "Irr_Scheduling" in table.table_id or "temp" in table.table_id or "copy" in table.table_id\
+                if table.table_id == 'weather_forecast' or "Irr_Scheduling" in table.table_id or "temp" in table.table_id or "copy" in table.table_id \
                         or "5G" in table.table_id or "z6" in table.table_id:
                     continue
                 else:
@@ -1436,12 +1442,13 @@ def select_psi(field_name: str, logger_name: str) -> tuple[list[date], list[int]
     dml_statement = f"select date, psi from {dataset} where psi is not null order by date asc"
     # print(dml_statement)
     psi_dict = dbwriter.return_query_dict(dml_statement, 'date', 'psi', 'stomato')
-    psi_only_three_dict = dict(itertools.islice(psi_dict.items(),3))
+    psi_only_three_dict = dict(itertools.islice(psi_dict.items(), 3))
     date_list = list(psi_only_three_dict.keys())
     psi_list = list(psi_only_three_dict.values())
     return date_list, psi_list
 
-def show_psi_pickle_2022(specific_file_path: str = PICKLE_DIRECTORY, filename: str ="psi_pickle_2022.pickle"):
+
+def show_psi_pickle_2022(specific_file_path: str = PICKLE_DIRECTORY, filename: str = "psi_pickle_2022.pickle"):
     """
     Function opens and returns psi pickle for 2022
 
@@ -1454,7 +1461,8 @@ def show_psi_pickle_2022(specific_file_path: str = PICKLE_DIRECTORY, filename: s
     return data
 
 
-def copy_last_day_from_old_date_to_new_date(project: str, field_name: str, logger_name: str, old_date: str, new_date: str):
+def copy_last_day_from_old_date_to_new_date(project: str, field_name: str, logger_name: str, old_date: str,
+                                            new_date: str):
     """
     This function copies the old date's data from a specific logger for a specific field and inserts it into the same logger but using a different
     date. This function is useful for when a logger gets disconnected for a day and we lost data for that day.
@@ -1504,8 +1512,10 @@ def copy_last_day_from_old_date_to_new_date(project: str, field_name: str, logge
         # Query to insert the selected values into the destination table with a different date
         insert_query = f"INSERT INTO `{destination_table}` "
         insert_query += "VALUES ("
-        insert_query += ", ".join([f"{'Null' if value is None else value if not isinstance(value, str) else convert_string(value)}" for
-                                   value in values])  # Loop through all the values in row_dict. If your value is None, convert into a string of Null.
+        insert_query += ", ".join(
+            [f"{'Null' if value is None else value if not isinstance(value, str) else convert_string(value)}" for
+             value in
+             values])  # Loop through all the values in row_dict. If your value is None, convert into a string of Null.
         # If your value is a string you want to convert that value into a string by adding a ' to the beginning and end. If not when you loop
         # through the values they get inserted without the ''
         insert_query += ")"
@@ -1525,40 +1535,41 @@ def copy_last_day_from_old_date_to_new_date(project: str, field_name: str, logge
 def convert_string(text):
     return f"'{text}'"
 
+
 def find_lowest_psi_fields():
-        """
+    """
         Function finds the lowest psi fields in the database and returns a list of the lowest psi fields.
         """
-        psi_list = []
-        logger_name_list = []
-        project = 'stomato-2023'
-        # Get list of datasets in database
-        client = dbwriter.grab_bq_client(project)
-        datasets = dbwriter.get_datasets(project)
-        # Loop through all datasets
-        for dataset in datasets[0]:
-            # print(f"Working on field: {dataset.dataset_id}")
-            # Get list of tables in dataset
-            tables = client.list_tables(dataset.dataset_id)
-            # Loop through all tables in dataset
-            for table in tables:
-                # print(table.table_id)
-                # table_id = table.table_id
-                if not ("Irr_Scheduling" in table.table_id) and not ("weather_forecast" in table.table_id):
-                    # Check if table is in algorithm list
-                    table_id = f"`{project}.{dataset.dataset_id}.{table.table_id}`"
-                    select_psi = f"select avg(psi) as average_psi, count(psi) as number_of_data_points from {table_id} where psi is not null"
-                    result = dbwriter.run_dml(select_psi)
-                    for row in result:
-                        if row.average_psi:
-                            # psi_list.append({'field': table_id,'psi':row.average_psi})
-                            if row.number_of_data_points > 20:
-                                psi_list.append(row.average_psi)
-                                logger_name_list.append(table.table_id)
-                                print(f"{table.table_id};{row.average_psi};{row.number_of_data_points}")
+    psi_list = []
+    logger_name_list = []
+    project = 'stomato-2023'
+    # Get list of datasets in database
+    client = dbwriter.grab_bq_client(project)
+    datasets = dbwriter.get_datasets(project)
+    # Loop through all datasets
+    for dataset in datasets[0]:
+        # print(f"Working on field: {dataset.dataset_id}")
+        # Get list of tables in dataset
+        tables = client.list_tables(dataset.dataset_id)
+        # Loop through all tables in dataset
+        for table in tables:
+            # print(table.table_id)
+            # table_id = table.table_id
+            if not ("Irr_Scheduling" in table.table_id) and not ("weather_forecast" in table.table_id):
+                # Check if table is in algorithm list
+                table_id = f"`{project}.{dataset.dataset_id}.{table.table_id}`"
+                select_psi = f"select avg(psi) as average_psi, count(psi) as number_of_data_points from {table_id} where psi is not null"
+                result = dbwriter.run_dml(select_psi)
+                for row in result:
+                    if row.average_psi:
+                        # psi_list.append({'field': table_id,'psi':row.average_psi})
+                        if row.number_of_data_points > 20:
+                            psi_list.append(row.average_psi)
+                            logger_name_list.append(table.table_id)
+                            print(f"{table.table_id};{row.average_psi};{row.number_of_data_points}")
 
-        # for ind, psi in enumerate(psi_list):
-        #     print(f"{logger_name_list[ind]}: {psi}")
+    # for ind, psi in enumerate(psi_list):
+    #     print(f"{logger_name_list[ind]}: {psi}")
 
 
 def generate_invite_code():
@@ -1589,7 +1600,8 @@ def insert_grower_field(name: str, region: str, tech_assigned: str, stations: st
     dbwriter.run_dml(dml_statement, project=project)
 
 
-def insert_grower_loggers(grower: str, field: str, logger_name: str, logger_direction: str, lat: str, long: str, logger_id: str,
+def insert_grower_loggers(grower: str, field: str, logger_name: str, logger_direction: str, lat: str, long: str,
+                          logger_id: str,
                           logger_password: str, crop_type: str):
     """
     Function inserts the growers logger information in the database
@@ -1624,7 +1636,8 @@ def add_new_celsius_columns_to_permanent_datasets():
     growers = Decagon.open_pickle()
     for grower in growers:
         for field in grower.fields:
-            if (field.crop_type.lower() == 'almonds' or field.crop_type.lower() == 'almonds' or field.crop_type.lower() == 'pistachio'
+            if (
+                    field.crop_type.lower() == 'almonds' or field.crop_type.lower() == 'almonds' or field.crop_type.lower() == 'pistachio'
                     or field.crop_type.lower() == 'pistachios'):
                 print(f"Field: {field.name}")
                 for logger in field.loggers:
@@ -1647,8 +1660,6 @@ def add_new_celsius_columns_to_permanent_datasets():
                             print("The column has not been added.")
                     except Exception as e:
                         print(f"Error updating table schema: {e}")
-
-
 
 
 def update_grower_portal_report_and_images(grower_names: str):
@@ -1699,6 +1710,7 @@ def update_field_portal_report_and_images(field_name: str, report_url: str = Non
                     print(statement)
     print('Done updating reports and previews')
     Decagon.write_pickle(growers)
+
 
 def sum_db_total_for_column_for_list_of_fields(pickle_name: str, pickle_directory: str, db_column: str,
                                                list_of_field_names: list[str]) -> None:
@@ -1814,13 +1826,22 @@ def get_values_for_date(project, field_name, logger_name, date):
 
 
 def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_date, vwcs):
+    # Ensure field_name is safe for database use
     field_name = dbwriter.remove_unwanted_chars_for_db_dataset(field_name)
 
     dataset_id = project + '.' + field_name + '.' + logger_name
     dataset_id = "`" + dataset_id + "`"
 
+    # Parse dates
     start_date_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_date_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    today = datetime.today()
+
+    # Ensure the end_date is not today or in the future
+    if end_date_dt >= today:
+        raise ValueError("end_date cannot be today or in the future. Please provide a valid date range.")
+
+    # Fetch the previous day's data for the start_date
     start_date_prev_day = start_date_dt - timedelta(days=1)
 
     # Fetch values from the day before start_date
@@ -1830,6 +1851,7 @@ def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_
         vwc_1_value, vwc_2_value, vwc_3_value, fc, wp = previous_day_values
         current_date = start_date_dt
 
+        # Loop through each date in the range and update/insert VWC data
         while current_date <= end_date_dt:
             current_date_s = current_date.strftime("%Y-%m-%d")
             current_date_s = "'" + current_date_s + "'"
@@ -1891,6 +1913,7 @@ def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_
     else:
         print('No values found for the day before the start_date')
 
+
 # Decagon.show_pickle()
 # growers = Decagon.open_pickle()
 # for grower in growers:
@@ -1898,9 +1921,6 @@ def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_
 #         if field.name == 'Lucero DillardD7':
 #             for logger in field.loggers:
 #                 change_logger_soil_type(logger.name, logger.field.name, logger.grower.name, 'Sandy Loam')
-
-
-
 
 
 # list_of_grower_fields_to_process = ['Bone Farms LLCF7', 'Fransicioni & Griva8', 'Mike Silva01-MS3', 'Nuss Farms Inc7',
@@ -1916,16 +1936,14 @@ def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_
 # add_new_year_to_historical_et("148")
 
 
-
-
 # add_new_celsius_columns_to_permanent_datasets()
 # add_new_year_to_historical_et()
 # cimisStation = CimisStation()
 # cimisStation.showCimisStations()
 # cimisStation = cimisStation.open_cimis_station_pickle()
 # for station in cimisStation:
-    # print(f"{station.station_number} : {station.latest_eto_value}")
-    # print(f"{station.station_number} : {station.active}")
+# print(f"{station.station_number} : {station.latest_eto_value}")
+# print(f"{station.station_number} : {station.active}")
 # Dict with keys being Field, Logger, Days as a List, PSI as a List
 # copy_missing_data_to_logger_from_other_logger('Lucero Dillard RoadD1', 'DI-D1-NE', 'DI-D3-NW')
 # select_first_psi_for_all_datasets()
@@ -1937,8 +1955,8 @@ def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_
 #     print(dataset[ind]['logger'])
 #     print(dataset[ind]['dates'])
 #     print(dataset[ind]['psi'])
-    # print(f"Field: {dataset['field']:20} Logger: {dataset['logger']:20} \n Dates: \n{' '.join(str(date) for date in dataset['dates']):20}"
-    #       f" \nPSI: \n{' '.join(str(date) for date in dataset['psi']):20}")
+# print(f"Field: {dataset['field']:20} Logger: {dataset['logger']:20} \n Dates: \n{' '.join(str(date) for date in dataset['dates']):20}"
+#       f" \nPSI: \n{' '.join(str(date) for date in dataset['psi']):20}")
 # fix_irr_inches_for_all_fields('2023-04-01', '2023-04-06')
 # copy_last_day_from_old_date_to_new_date('stomato-2023', 'Lucero Dillard RoadD1', "DI-D1-NE", '2023-06-26', '2023-06-27')
 # update_fc_wp('stomato-2023', 'Lucero Dillard RoadD 8, 11', 'DI-D8-C', 36, 22)
@@ -1969,10 +1987,10 @@ def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_
 #             # print(field.nickname)
 #             for logger in field.loggers:
 #                 remove_psi(field.name, '2023-11-1', '2023-12-15', '2023')
-                # print(logger.name)
-                # print(f"Old Logger Active: {logger.ir_active}")
-                # logger.ir_active = False
-                # print(f"New Logger Active: {logger.ir_active}")
+# print(logger.name)
+# print(f"Old Logger Active: {logger.ir_active}")
+# logger.ir_active = False
+# print(f"New Logger Active: {logger.ir_active}")
 #                 if logger.active and logger.name == 'SS-333-SW':
 #
 # #                     print(logger.id)
@@ -2114,4 +2132,4 @@ def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_
 # update_field_portal_report_and_images('Lucero Rio VistaS South', preview_url='https://i.imgur.com/KZsthm9.png', report_url='https://lookerstudio.google.com/reporting/64fe5e52-69a9-4a05-a5d5-fa7c9eb6984a')
 # copy_missing_data_to_logger_from_other_logger('Lucero LatropLTP7 9', )
 # update_vwc_for_date_range('stomato-2024', 'Lucero Rio VistaB West', 'RV-B-C', '2024-07-23', '2024-07-23')
-# update_vwc_for_date_range('stomato-2024', 'Lucero Rio VistaB West', 'RV-B-C', '2024-09-20', '2024-09-20', ['VWC 1'])
+update_vwc_for_date_range('stomato-2024', 'Lucero Rio VistaB West', 'RV-B-C', '2024-09-20', '2024-09-20', ['VWC 2'])
