@@ -219,13 +219,13 @@ def handle_prev_day_selections(ack, body, respond):
 
         # Log the request to Google Sheets
         request_name = 'Use Previous Days VWC'
-        info = ', '.join(loggers)
+        info = ', '.join(loggers) + vwcs
         username = body['user']['name']
         SheetsHandler.log_request_to_sheet(request_name, username, info)
 
         for logger in loggers:
             SQLScripts.update_vwc_for_date_range(project, field, logger, start_date, end_date, vwcs)
-        response_text = f"Using previous day VWC for the following:\nLoggers: {', '.join(loggers)}"
+        response_text = f"Using previous day VWC for the following:\nLoggers: {', '.join(loggers)} at {vwcs}"
         respond(text=response_text)
 
         # Clear the selections for this user
@@ -486,7 +486,7 @@ def date_picker_block():
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "Choose End Date"
+                "text": "Choose End Date (can be the same as Start Date)"
             },
             "accessory": {
                 "type": "datepicker",
