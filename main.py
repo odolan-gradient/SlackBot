@@ -215,6 +215,7 @@ def handle_prev_day_selections(ack, body, respond):
         grower_name = grower.name
         project = SharedPickle.get_project(field, grower_name)
         vwcs = user_selections[user_id]['vwc_depth_select']
+        print(vwcs)
 
         # Log the request to Google Sheets
         request_name = 'Use Previous Days VWC'
