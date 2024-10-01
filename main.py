@@ -187,6 +187,7 @@ def handle_toggle_psi(ack, body, respond):
 @app.action("logger_select_prev_day")
 @app.action("start_date_select")
 @app.action("end_date_select")
+@app.action("vwc_depth_select")
 def handle_prev_day_selections(ack, body, respond):
     ack()
     user_id = body['user']['id']
@@ -199,10 +200,13 @@ def handle_prev_day_selections(ack, body, respond):
     elif action_id in ['start_date_select', 'end_date_select']:
         selected_date = body['actions'][0]['selected_date']
         user_selections[user_id][action_id] = selected_date
+    elif action_id in ['vwc_depth_select']:
+        selected_vwc = body['actions'][0]['selected_options']
+        user_selections[user_id][action_id] = selected_vwc
 
     # Check if all selections are complete
     if 'logger_select_prev_day' in user_selections[user_id] and 'start_date_select' in user_selections[
-        user_id] and 'end_date_select' in user_selections[user_id]:
+        user_id] and 'end_date_select' in user_selections[user_id] and 'vwc_depth_select' in user_selections[user_id]:
         loggers = user_selections[user_id]['logger_select_prev_day']
         start_date = user_selections[user_id]['start_date_select']
         end_date = user_selections[user_id]['end_date_select']
@@ -210,6 +214,7 @@ def handle_prev_day_selections(ack, body, respond):
         grower = user_selections[user_id]['grower']
         grower_name = grower.name
         project = SharedPickle.get_project(field, grower_name)
+        vwcs = user_selections[user_id]['vwc_depth_select']
 
         # Log the request to Google Sheets
         request_name = 'Use Previous Days VWC'
@@ -218,7 +223,7 @@ def handle_prev_day_selections(ack, body, respond):
         SheetsHandler.log_request_to_sheet(request_name, username, info)
 
         for logger in loggers:
-            SQLScripts.update_vwc_for_date_range(project, field, logger, start_date, end_date)
+            SQLScripts.update_vwc_for_date_range(project, field, logger, start_date, end_date, vwcs)
         response_text = f"Using previous day VWC for the following:\nLoggers: {', '.join(loggers)}"
         respond(text=response_text)
 
@@ -284,6 +289,7 @@ def handle_grower_menu(ack, body, client, respond):
     selected_value = fix_ampersand(selected_value)
     grower = SharedPickle.get_grower(selected_value)
     field_list = [field.name for field in grower.fields]
+    username = body['user']['name']
 
     # Add to selections
     user_id = body['user']['id']
@@ -309,11 +315,15 @@ def handle_grower_menu(ack, body, client, respond):
         elif not result:
             respond(f'{grower.name} already in the sheet\nView here: {link}')
 
+        # Log the request to Google Sheets
+        request_name = 'Add Grower Billing'
+        info = grower.name
+        SheetsHandler.log_request_to_sheet(request_name, username, info)
+
     elif grower_action_id == 'grower_select_show':
         # Log the request to Google Sheets
         request_name = 'Show Pickle'
         info = selected_value
-        username = body['user']['name']
         SheetsHandler.log_request_to_sheet(request_name, username, info)
 
         grower = SharedPickle.get_grower(selected_value)
@@ -452,18 +462,8 @@ def logger_and_toggle_menu(logger_list):
     blocks = [logger_block] + toggle_block
     return blocks
 
-
-def logger_and_dates_menu(ack, respond, logger_list):
-    print("logger_and_dates_menu function called")
-    ack()
-
-    # Define the logger block
-    logger_action_id = 'logger_select_prev_day'
-    logger_block = logger_select_block(logger_list, logger_action_id)
-    print(f"logger_block: {logger_block}")
-
-    # Define the date picker blocks
-    date_range_blocks = [
+def date_picker_block():
+    return [
         {
             "type": "section",
             "text": {
@@ -499,9 +499,44 @@ def logger_and_dates_menu(ack, respond, logger_list):
             }
         }
     ]
+def vwc_select_block(action_id):
+    vwcs = ['VWC 1', 'VWC 2', 'VWC 3']
+    return {
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": "Choose VWC depths to change"
+        },
+        "accessory": {
+            "type": "multi_static_select",
+            "placeholder": {
+                "type": "plain_text",
+                "text": "Select VWCs",
+                "emoji": True
+            },
+            "options": generate_options(vwcs),
+            "action_id": action_id
+        }
+    }
+
+def logger_and_dates_menu(ack, respond, logger_list):
+    print("logger_and_dates_menu function called")
+    ack()
+
+    # Define the logger block
+    logger_action_id = 'logger_select_prev_day'
+    logger_block = logger_select_block(logger_list, logger_action_id)
+    print(f"logger_block: {logger_block}")
+
+    # Define the vwc picker block
+    action_id = 'vwc_depth_select'
+    vwc_block = vwc_select_block(action_id)
+
+    # Define the date picker blocks
+    date_range_blocks = date_picker_block()
 
     # Combine logger block and date picker blocks
-    blocks = [logger_block] + date_range_blocks
+    blocks = [logger_block] + [vwc_block] + date_range_blocks
 
     try:
         respond(blocks=blocks)

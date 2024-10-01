@@ -1813,7 +1813,7 @@ def get_values_for_date(project, field_name, logger_name, date):
         return None
 
 
-def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_date):
+def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_date, vwcs):
     field_name = dbwriter.remove_unwanted_chars_for_db_dataset(field_name)
 
     dataset_id = project + '.' + field_name + '.' + logger_name
@@ -1843,12 +1843,33 @@ def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_
 
             check_rows = dbwriter.run_dml(check_query, project=project)
             check_result = list(check_rows)
+
+            # Build the VWC-related parts of the DML based on the 'vwcs' parameter
+            vwc_set_clauses = []
+            vwc_insert_columns = []
+            vwc_insert_values = []
+
+            if 'VWC 1' in vwcs:
+                vwc_set_clauses.append(f"vwc_1 = {vwc_1_value}")
+                vwc_insert_columns.append("vwc_1")
+                vwc_insert_values.append(vwc_1_value)
+
+            if 'VWC 2' in vwcs:
+                vwc_set_clauses.append(f"vwc_2 = {vwc_2_value}")
+                vwc_insert_columns.append("vwc_2")
+                vwc_insert_values.append(vwc_2_value)
+
+            if 'VWC 3' in vwcs:
+                vwc_set_clauses.append(f"vwc_3 = {vwc_3_value}")
+                vwc_insert_columns.append("vwc_3")
+                vwc_insert_values.append(vwc_3_value)
+
             if check_result and check_result[0][0] == 0:
-                # No data exists for this date insert a new row
+                # No data exists for this date, insert a new row
                 insert_dml = (
                     f"INSERT INTO {dataset_id} "
-                    f"(date, vwc_1, vwc_2, vwc_3, field_capacity, wilting_point) "
-                    f"VALUES ({current_date_s}, {vwc_1_value}, {vwc_2_value}, {vwc_3_value}, {fc}, {wp})"
+                    f"(date, {', '.join(vwc_insert_columns)}, field_capacity, wilting_point) "
+                    f"VALUES ({current_date_s}, {', '.join(map(str, vwc_insert_values))}, {fc}, {wp})"
                 )
                 dbwriter.run_dml(insert_dml, project=project)
                 print(f'Inserted new row for date: {current_date_s}')
@@ -1856,9 +1877,7 @@ def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_
                 # Update existing row
                 update_dml = (
                     f"UPDATE {dataset_id} "
-                    f"SET vwc_1 = {vwc_1_value}, "
-                    f"    vwc_2 = {vwc_2_value}, "
-                    f"    vwc_3 = {vwc_3_value}, "
+                    f"SET {', '.join(vwc_set_clauses)}, "
                     f"    field_capacity = {fc}, "
                     f"    wilting_point = {wp} "
                     f"WHERE date = {current_date_s}"
@@ -1871,9 +1890,6 @@ def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_
         print('Date range update completed.')
     else:
         print('No values found for the day before the start_date')
-
-
-
 
 # Decagon.show_pickle()
 # growers = Decagon.open_pickle()
@@ -2098,3 +2114,4 @@ def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_
 # update_field_portal_report_and_images('Lucero Rio VistaS South', preview_url='https://i.imgur.com/KZsthm9.png', report_url='https://lookerstudio.google.com/reporting/64fe5e52-69a9-4a05-a5d5-fa7c9eb6984a')
 # copy_missing_data_to_logger_from_other_logger('Lucero LatropLTP7 9', )
 # update_vwc_for_date_range('stomato-2024', 'Lucero Rio VistaB West', 'RV-B-C', '2024-07-23', '2024-07-23')
+# update_vwc_for_date_range('stomato-2024', 'Lucero Rio VistaB West', 'RV-B-C', '2024-09-20', '2024-09-20', ['VWC 1'])
