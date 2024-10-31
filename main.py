@@ -121,6 +121,7 @@ def handle_soil_and_psi_selections(ack, body, respond):
     if 'soil_select' in user_selections[user_id] and 'logger_select_change_soil' in user_selections[user_id]:
         loggers = user_selections[user_id]['logger_select_change_soil']
         soil_type = user_selections[user_id]['soil_select']
+        soil_type = soil_type.split(' (')[0]  # get rid of FC and WP
         field = user_selections[user_id]['field']
         grower = user_selections[user_id]['grower']
         grower_name = grower.name
@@ -254,8 +255,8 @@ def handle_field_select(ack, body, respond):
 
     logger_list = [logger.name for logger in field_obj.loggers]
     if callback_id == 'field_select_change_soil':
-        soil_types = ['Sand', 'Loamy Sand', 'Sandy Loam', 'Sandy Clay Loam', 'Loam', 'Sandy Clay', 'Silt Loam', 'Silt',
-                      'Clay Loam', 'Silty Clay Loam', 'Silty Clay', 'Clay']
+        soil_types = ['Sand (10-5)', 'Loamy Sand (12-5)', 'Sandy Loam (18-8)', 'Sandy Clay Loam (27-17)', 'Loam (28-14)', 'Sandy Clay (36-25)', 'Silt Loam (31-11)', 'Silt (30-6)',
+                      'Clay Loam (36-22)', 'Silty Clay Loam (38-22)', 'Silty Clay (41-27)', 'Clay (42-30)']
         logger_and_soil_list_menu(ack, respond, logger_list, soil_types)
 
     elif callback_id == 'field_select_psi':
