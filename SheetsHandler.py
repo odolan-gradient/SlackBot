@@ -221,8 +221,8 @@ def write_data_to_sheet(service, spreadsheet_id, sheet_name, column_headers, dat
 
 
 # https://docs.google.com/spreadsheets/d/137KpyvSKY_LCqiups4EAcwMQPYHV_a55bjwRQAMEX_k/edit?gid=0#gid=0
-growers = SharedPickle.open_pickle()
-billing_report_new_tab(growers)
+# growers = SharedPickle.open_pickle()
+# billing_report_new_tab(growers)
 # spreadsheet_id = '137KpyvSKY_LCqiups4EAcwMQPYHV_a55bjwRQAMEX_k'
 # grower_names = get_grower_names(spreadsheet_id)
 # print("Grower Names:", grower_names)

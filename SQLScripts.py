@@ -2132,4 +2132,4 @@ def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_
 # update_field_portal_report_and_images('Lucero Rio VistaS South', preview_url='https://i.imgur.com/KZsthm9.png', report_url='https://lookerstudio.google.com/reporting/64fe5e52-69a9-4a05-a5d5-fa7c9eb6984a')
 # copy_missing_data_to_logger_from_other_logger('Lucero LatropLTP7 9', )
 # update_vwc_for_date_range('stomato-2024', 'Lucero Rio VistaB West', 'RV-B-C', '2024-07-23', '2024-07-23')
-update_vwc_for_date_range('stomato-2024', 'Lucero Rio VistaB West', 'RV-B-C', '2024-09-20', '2024-09-20', ['VWC 2'])
+# update_vwc_for_date_range('stomato-2024', 'Lucero Rio VistaB West', 'RV-B-C', '2024-09-20', '2024-09-20', ['VWC 2'])
