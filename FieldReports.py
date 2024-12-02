@@ -370,7 +370,6 @@ def days_above_100(table_results):
 
 
 def create_pie_chart(data_dict):
-    # TODO colors should match our VWC chart
     # Filter out zero values
     labels = [label for label, size in data_dict.items() if size > 0]
     sizes = [size for size in data_dict.values() if size > 0]
@@ -500,7 +499,6 @@ def create_combined_bar_line_graph(bar_values, line_values, bar_label, line_labe
 
 
 def create_psi_bucket_graph_with_percentages(psi_values):
-    # TODO: this is for tomatoes not permanents
     # Define the PSI ranges and corresponding labels
     psi_ranges = [0, 0.5, 1.0, 1.6, 2.2, 3]
     labels = [
@@ -573,7 +571,6 @@ def create_psi_bucket_graph_with_percentages(psi_values):
 
 
 def create_vwc_bucket_chart(data_dict, value_ranges):
-    # TODO the legend  is  upside down
 
     if len(value_ranges) != 2 * len(data_dict):
         raise ValueError("Length of value_ranges must be double the length of data_dict labels")
