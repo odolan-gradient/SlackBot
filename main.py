@@ -128,7 +128,8 @@ def handle_soil_and_psi_selections(ack, body, respond):
 
         # Log the request to Google Sheets
         request_name = 'Change Soil Type'
-        info = ', '.join(loggers)
+        logger_str = ', '.join(loggers)
+        info = f'{field} {logger_str} {soil_type}'
         username = body['user']['name']
         SheetsHandler.log_request_to_sheet(request_name, username, info)
 
@@ -172,7 +173,7 @@ def handle_toggle_psi(ack, body, respond):
             on_or_off = user_selections[user_id]['psi_off']
         # Log the request to Google Sheets
         request_name = 'Toggle PSI'
-        info = loggers
+        info = f'{field} {loggers} {on_or_off}'
         username = body['user']['name']
         SheetsHandler.log_request_to_sheet(request_name, username, info)
 
@@ -787,7 +788,7 @@ def get_soil_type_from_coords(latitude, longitude):
     point_wkt = f"POINT({longitude} {latitude})"
     # SQL query to get soil texture information
     query = f"""
-    SELECT mu.muname, c.cokey
+    SELECT mu.muname, c.localphase
     FROM mapunit AS mu
     JOIN component AS c ON c.mukey = mu.mukey
     JOIN chorizon AS ch ON ch.cokey = c.cokey
@@ -820,21 +821,30 @@ def get_soil_type_from_coords(latitude, longitude):
             # the row in the json containing soil texture information
             if data["Table"][2]:
                 texture_line = data["Table"][2][0]
-                lowercase_input = texture_line.lower()
+                second_texture_descrip = data["Table"][2][1]
+                lowercase_texture = texture_line.lower()
+                lowercase_second_texture = second_texture_descrip.lower()
 
                 matched_soil_type = None
 
                 # Iterate through the list of soil types and check for a match
                 for soil_type in soil_types:
-                    if soil_type.lower() in lowercase_input:
+                    if soil_type.lower() in lowercase_texture:
                         matched_soil_type = soil_type
-                        print(f'Found soil type: {lowercase_input}')
+                        print(f'Found soil type: {lowercase_texture}')
                         break
+                    elif soil_type.lower() in lowercase_second_texture:
+                        matched_soil_type = soil_type
+                        print(f'Found soil type: {lowercase_second_texture}')
+                        break
+
                 return matched_soil_type
         else:
             print("No soil information found for the given coordinates.")
     else:
         print(f"Error: {response.status_code}, {response.text}")
+
+
 
 
 # Entry point for Google Cloud Functions

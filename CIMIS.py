@@ -575,15 +575,16 @@ def get_distance(station, latitude, longitude):
     distance = c * r
     return distance
 
-# cimis = CIMIS()
-# active_stations = cimis.get_list_of_active_eto_stations()
+cimis = CIMIS()
+
 # res = cimis.get_closest_station_in_county('139', ['143'], {}, active_stations)
 # print()
-# lat = 38.501258
-# long = -121.97851
+lat = 35.0816049
+long = -119.1245581
 
-# stations_to_skip = ['143', '139']
+stations_to_skip = []
 #
-# res2 = cimis.get_closest_station(stations, lat, long, stations_to_skip)
-# res3 = cimis.get_closest_cimis_station(lat, long, stations_to_skip)
-# print()
+# active_stations = cimis.get_list_of_active_eto_stations()
+# res3 = cimis.get_closest_station(active_stations, lat, long, stations_to_skip)
+
+# print(res3)

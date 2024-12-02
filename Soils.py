@@ -1,7 +1,18 @@
-import matplotlib.pyplot as plt
+import pandas as pd
 from matplotlib.colors import ListedColormap
 from matplotlib.patches import Patch
+import requests
+from shapely.wkt import loads
+import matplotlib.pyplot as plt
+from shapely.geometry import Polygon
 
+from shapely.ops import orient
+from pykml import parser
+
+
+import geopandas as gpd
+import plotly.express as px
+import plotly.io as pio
 
 class AllSoils(object):
     def __init__(self):
@@ -166,7 +177,6 @@ class Soil(object):
         else:
             self.wilting_point = wilting_point
         hello = self.set_bounds()
-
 
     def set_bounds(self) -> None:
         """
@@ -503,3 +513,347 @@ class Soil(object):
             return 'incorrect'
 
 
+def get_soil_types_from_area(polygon_coords):
+    """
+    Retrieves soil types within a polygon defined by a list of latitude/longitude points.
+    :param polygon_coords: List of (latitude, longitude) tuples defining the polygon.
+    :return: List of soil types in the area.
+    """
+    # Construct a POLYGON WKT from the coordinates
+    polygon_wkt = f"POLYGON(({', '.join(f'{lon} {lat}' for lat, lon in polygon_coords)}, {polygon_coords[0][1]} {polygon_coords[0][0]}))"
+
+    query = f"""
+    SELECT mu.muname, mp.mupolygongeo, c.localphase
+    FROM mapunit AS mu
+    JOIN component AS c ON c.mukey = mu.mukey
+    JOIN mupolygon AS mp ON mu.mukey = mp.mukey
+    WHERE mu.mukey IN (
+        SELECT DISTINCT mukey
+        FROM SDA_Get_Mukey_from_intersection_with_WktWgs84('{polygon_wkt}')
+    );
+    """
+
+    # SDA request payload
+    request_payload = {
+        "format": "JSON+COLUMNNAME+METADATA",
+        "query": query
+    }
+
+    sda_url = "https://sdmdataaccess.sc.egov.usda.gov/Tabular/SDMTabularService/post.rest"
+    headers = {'Content-Type': 'application/json'}
+
+    # Execute the POST request to SDA
+    response = requests.post(sda_url, json=request_payload, headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        processed_data = process_mupolygon_data(data['Table'])
+        gdf = graph_data(processed_data, polygon_coords)
+        gdf_plotted = plot_soil_on_mapbox(gdf, polygon_coords)
+        return gdf_plotted
+
+def get_soil_type(muname, localphase):
+
+    soil_types = ['Silty Clay Loam', 'Sandy Clay Loam',
+                  'Sandy Clay', 'Silt Loam', 'Clay Loam',
+                  'Silty Clay', 'Loamy Sand', 'Sandy Loam',
+                  'Sand', 'Clay', 'Loam', 'Silt']
+    texture_line = muname
+    second_texture_descrip = localphase
+    lowercase_texture = texture_line.lower()
+    lowercase_second_texture = second_texture_descrip.lower()
+
+    matched_soil_type = None
+
+    # Iterate through the list of soil types and check for a match
+    for soil_type in soil_types:
+        if soil_type.lower() in lowercase_texture:
+            matched_soil_type = soil_type
+            print(f'Found soil type: {lowercase_texture}')
+            break
+        elif soil_type.lower() in lowercase_second_texture:
+            matched_soil_type = soil_type
+            print(f'Found soil type: {lowercase_second_texture}')
+            break
+    return matched_soil_type
+
+def process_mupolygon_data(data):
+    """
+    Processes the soil polygon data to extract meaningful structures for analysis.
+    """
+    rows = data[2:]  # Skipping metadata row at index 1
+
+
+    processed_data = []
+    for row in rows:
+
+        muname = row[0]
+        geometry_wkt = row[1]
+        localphase = row[2]
+        soil_type = get_soil_type(muname, localphase)
+
+        try:
+            geometry = loads(geometry_wkt)  # Convert WKT to a Shapely geometry
+        except Exception as e:
+            print(f"Error processing WKT for {soil_type}: {e}")
+            geometry = None
+
+        processed_data.append({
+            "muname": muname,
+            "geometry": geometry
+        })
+    return processed_data
+
+
+def graph_data(data, polygon_coords):
+    # Convert data to GeoDataFrame
+    gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
+
+    # Define your area of interest as a Polygon
+    defined_area = Polygon([(lon, lat) for lat, lon in polygon_coords])
+    defined_area_gdf = gpd.GeoDataFrame(geometry=[defined_area], crs="EPSG:4326")
+
+    # Clip soil polygons to the defined area
+    gdf_clipped = gpd.clip(gdf, defined_area_gdf)
+
+    # Assign unique colors to each 'muname'
+    unique_soil_types = gdf_clipped["muname"].unique()
+    cmap = plt.get_cmap("tab10")
+    colors = {soil: cmap(i / len(unique_soil_types)) for i, soil in enumerate(unique_soil_types)}
+    gdf_clipped["color"] = gdf_clipped["muname"].map(colors)
+
+    # Plot the data
+    fig, ax = plt.subplots(figsize=(10, 10))
+    gdf_clipped.plot(ax=ax, color=gdf_clipped["color"], edgecolor="black")
+    defined_area_gdf.boundary.plot(ax=ax, color="black", linewidth=1, label="Defined Area")
+
+    # Add a custom legend to the right
+    handles = [plt.Line2D([0], [0], color=colors[soil], lw=4, label=soil) for soil in unique_soil_types]
+    ax.legend(
+        handles=handles,
+        title="Soil Types",
+        loc="center left",
+        bbox_to_anchor=(1, 0.8),
+    )
+
+    # Add labels and titles
+    plt.title('Soil Map of Defined Polygon')
+    plt.xlabel("Longitude")
+    plt.ylabel("Latitude")
+
+    # Remove x and y ticks
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+    # plt.show()
+    return gdf_clipped
+
+
+def plot_soil_on_mapbox(gdf, polygon_coords):
+    """
+    Plots soil polygons on a Mapbox map using Plotly, ensuring compatibility and visibility.
+
+    Parameters:
+    - gdf (GeoDataFrame): GeoDataFrame containing soil polygons with 'muname' and 'geometry'.
+    - polygon_coords: List of (latitude, longitude) tuples defining the polygon.
+    """
+    # Ensure GeoDataFrame has the correct CRS
+    gdf = gdf.to_crs("EPSG:4326")
+
+    # Fix polygon orientation and ensure valid geometries
+    gdf["geometry"] = gdf["geometry"].apply(
+        lambda geom: orient(geom, sign=1.0) if geom.is_valid else geom.buffer(0)
+    )
+
+    # Define and clip the area of interest
+    defined_area = gpd.GeoDataFrame(
+        geometry=[Polygon([(lon, lat) for lat, lon in polygon_coords])],
+        crs="EPSG:4326"
+    )
+    gdf_clipped = gpd.clip(gdf, defined_area)
+
+    # Convert GeoDataFrame to GeoJSON
+    geojson_data = gdf_clipped.__geo_interface__
+
+    # Calculate the center of the map
+    lats, lons = zip(*polygon_coords)
+    center_lat = sum(lats) / len(lats)
+    center_lon = sum(lons) / len(lons)
+
+    # Plot the map
+    fig = px.choropleth_mapbox(
+        gdf_clipped,
+        geojson=geojson_data,
+        locations=gdf_clipped.index,
+        color="muname",
+        mapbox_style="carto-positron",
+        center={"lat": center_lat, "lon": center_lon},
+        zoom=14,
+        opacity=0.8
+    )
+
+    # Add your Mapbox token
+    # fig.update_layout(mapbox_accesstoken="pk.eyJ1IjoiZ3JhZGllbnRvbGxpZSIsImEiOiJjbTN4bm05N2wxaXAzMmlvYjZlczRjeWJ3In0.LGkbg4xjs8TZLOLu1rSJvA")
+    #
+    # save_mapbox_image(fig, 'mapbox_map.png')
+    # Show map
+    # fig.show()
+    return gdf_clipped
+
+def kml_to_polygon_wkt(kml_file_path):
+    """
+    Reads a KML file, extracts polygon coordinates, and converts them to a WKT format.
+
+    Parameters:
+    - kml_file_path (str): Path to the KML file.
+
+    Returns:
+    - str: WKT representation of the polygon.
+    """
+    with open(kml_file_path, 'r') as file:
+        kml_content = file.read()
+
+    # Parse the KML file
+    kml_tree = parser.fromstring(kml_content)
+
+    # Navigate to the Polygon coordinates (assumes the KML has a single Polygon)
+    coordinates = kml_tree.Document.Placemark.Polygon.outerBoundaryIs.LinearRing.coordinates.text.strip()
+
+    # Split coordinates into a list
+    coord_list = coordinates.split()
+
+    # Convert the coordinate strings to (longitude, latitude) tuples
+    polygon_coords = []
+    for coord in coord_list:
+        lon, lat, *_ = map(float, coord.split(","))  # Extract longitude and latitude
+        polygon_coords.append((lon, lat))
+
+    # Create a Polygon object
+    polygon = Polygon(polygon_coords)
+
+    # Convert the Polygon to WKT
+    polygon_wkt = polygon.wkt
+
+    return polygon_wkt
+
+def save_mapbox_image(fig, filename="mapbox_image.png"):
+    """
+    Saves a Mapbox map figure created with Plotly to an image file.
+
+    Parameters:
+    - fig (plotly.graph_objects.Figure): The Plotly figure object to save.
+    - filename (str): The name of the output file (e.g., "mapbox_image.png").
+                      Supported formats: PNG, JPEG, SVG, PDF.
+
+    Returns:
+    - None
+    """
+    # Save the figure as an image
+    try:
+        # Supported formats: png, jpg, jpeg, webp, svg, pdf
+        pio.write_image(fig, filename)
+        print(f"Mapbox image saved as {filename}")
+    except Exception as e:
+        print(f"Error saving the mapbox image: {e}")
+
+def extract_boundaries_from_kml(kml_path):
+    """
+    Extracts field boundaries (polygons) from a KML file.
+    :param kml_path: Path to the KML file.
+    :return: List of polygon coordinates (latitude, longitude).
+    """
+    # Read the KML as a GeoDataFrame
+    gdf = gpd.read_file(kml_path, driver='KML')
+
+    # Extract boundaries
+    boundaries = []
+    for _, row in gdf.iterrows():
+        if row.geometry.is_valid:
+            boundaries.append([(coord[1], coord[0]) for coord in row.geometry.exterior.coords])
+    return boundaries
+
+
+def get_all_soil_data(kml_files):
+    """
+    Process multiple KML files to fetch soil data and generate GeoDataFrames.
+    :param kml_files: List of KML file paths.
+    :return: Combined GeoDataFrame of all soil data.
+    """
+    combined_gdf = gpd.GeoDataFrame()
+
+    for kml_path in kml_files:
+        print(f"Processing {kml_path}")
+        # Extract boundaries from the KML file
+        boundaries = extract_boundaries_from_kml(kml_path)
+
+        for polygon_coords in boundaries:
+            print(f'Processing {polygon_coords}')
+            # Get soil data for the boundary
+            gdf = get_soil_types_from_area(polygon_coords)
+
+            # Combine into a single GeoDataFrame
+            combined_gdf = pd.concat([combined_gdf, gdf], ignore_index=True)
+
+    return combined_gdf
+
+
+def plot_combined_soil_map(combined_gdf, california_bounds):
+    """
+    Plots the combined GeoDataFrame of soil data on a Mapbox map.
+    :param combined_gdf: Combined GeoDataFrame containing soil data.
+    :param california_bounds: Polygon of California's boundary for map fitting.
+    """
+    # Ensure the GeoDataFrame has the correct CRS
+    combined_gdf = combined_gdf.to_crs("EPSG:4326")
+
+    # Convert the GeoDataFrame to GeoJSON
+    geojson_data = combined_gdf.__geo_interface__
+
+    # Calculate map center (California's centroid)
+    california_center = {
+        "lat": (california_bounds[1] + california_bounds[3]) / 2,
+        "lon": (california_bounds[0] + california_bounds[2]) / 2
+    }
+
+    # Plot the map
+    fig = px.choropleth_mapbox(
+        combined_gdf,
+        geojson=geojson_data,
+        locations=combined_gdf.index,
+        color="muname",  # Use soil types for coloring
+        mapbox_style="carto-positron",
+        center=california_center,
+        zoom=5,  # Adjust zoom level to fit California
+        opacity=0.7
+    )
+
+    # Add your Mapbox token
+    fig.update_layout(mapbox_accesstoken="YOUR_MAPBOX_TOKEN")
+    save_mapbox_image(fig)
+    fig.show()
+
+
+polygon_coords = [
+    (37.9395672, -121.6291727),  # top left
+    (37.9328473, -121.6291727),  # bottom left
+    (37.9328473, -121.6263780),  # bottom right
+    (37.9395672, -121.6263780),  # top right
+]
+
+# Show the p
+# soil_types = get_soil_types_from_area(polygon_coords)
+# print("Soil types in the area:", soil_types)
+# 37.939035, -121.632079
+# 37.927273, -121.627589
+# "pk.eyJ1IjoiZ3JhZGllbnRvbGxpZSIsImEiOiJjbTN4bm05N2wxaXAzMmlvYjZlczRjeWJ3In0.LGkbg4xjs8TZLOLu1rSJvA"
+
+# Paths to KML files
+kml_files = ["1241.kml", "1276.kml"]
+
+# Define California boundaries (approximate)
+california_bounds = [-124.409591, 32.534156, -114.131211, 42.009518]  # [min_lon, min_lat, max_lon, max_lat]
+
+# Process KML files and get combined soil data
+combined_soil_gdf = get_all_soil_data(kml_files)
+
+# Plot the combined soil data on Mapbox
+plot_combined_soil_map(combined_soil_gdf, california_bounds)
