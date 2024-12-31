@@ -217,11 +217,10 @@ def handle_prev_day_selections(ack, body, respond):
         grower_name = grower.name
         project = SharedPickle.get_project(field, grower_name)
         vwcs = user_selections[user_id]['vwc_depth_select']
-        print(vwcs)
 
         # Log the request to Google Sheets
         request_name = 'Use Previous Days VWC'
-        info = ', '.join(loggers) + vwcs
+        info = ', '.join(loggers) + ', ' + ', '.join(map(str, vwcs))
         username = body['user']['name']
         SheetsHandler.log_request_to_sheet(request_name, username, info)
 
@@ -867,3 +866,4 @@ if __name__ == "__main__":
 
 # https://seal-app-er6sr.ondigitalocean.app/slack/events
 # interactivity is the one that determines the debug
+# https://us-central1-rich-meridian-430023-j1.cloudfunctions.net/slackBot/slack/events
