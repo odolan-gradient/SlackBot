@@ -28,7 +28,7 @@ PICKLE_DIRECTORY = "H:\\Shared drives\\Stomato\\" + DIRECTORY_YEAR + "\\Pickle\\
 # SHARED_DRIVE_ID = '0ACxUDm7mZyTVUk9PVA' # test
 SHARED_DRIVE_ID = '13PoBmmfF0VqVRzkF0CRjdr2kGX127zKg'  # real
 # PICKLE_FILE_ID = '1PDDYup0B33x1Xi1jX2IpRtYxzjuRfNJ2'  # test
-PICKLE_FILE_ID = '1P6hHDAVvYDj3OjBScglYuUIMRja_CrA_'  # real
+PICKLE_FILE_ID = '1SmAIHpGie1X440xjUyG1VPdcXkQtGM2v'  # real
 # CREDENTIALS_FILE = r'C:\Users\odolan\PycharmProjects\SlackBot\client_secret_creds.json'
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
