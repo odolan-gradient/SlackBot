@@ -512,6 +512,77 @@ class Soil(object):
         else:
             return 'incorrect'
 
+def get_soil_type_from_coords(latitude, longitude):
+    """
+    Grabs soil type from ADA API given lat, long
+    :param latitude:
+    :param longitude:
+    :return:
+    """
+    print('Getting soil type')
+
+    point_wkt = f"POINT({longitude} {latitude})"
+    # SQL query to get soil texture information
+    query = f"""
+    SELECT mu.muname, c.localphase
+    FROM mapunit AS mu
+    JOIN component AS c ON c.mukey = mu.mukey
+    JOIN chorizon AS ch ON ch.cokey = c.cokey
+    WHERE mu.mukey IN (
+            SELECT DISTINCT mukey
+            FROM SDA_Get_Mukey_from_intersection_with_WktWgs84('{point_wkt}')
+        )
+    """
+
+    # SDA request payload
+    request_payload = {
+        "format": "JSON+COLUMNNAME+METADATA",
+        "query": query
+    }
+
+    sda_url = "https://sdmdataaccess.sc.egov.usda.gov/Tabular/SDMTabularService/post.rest"
+    headers = {'Content-Type': 'application/json'}
+    response = requests.post(sda_url, json=request_payload, headers=headers)
+
+    # soil types intentionally formatted, longest to shortest length
+    # so when we check if soil_type in response_string
+    soil_types = ['Silty Clay Loam', 'Sandy Clay Loam',
+                  'Sandy Clay', 'Silt Loam', 'Clay Loam',
+                  'Silty Clay', 'Loamy Sand', 'Sandy Loam',
+                  'Sand', 'Clay', 'Loam', 'Silt']
+
+    if response.status_code == 200:
+        data = response.json()
+        if "Table" in data:
+            # the row in the json containing soil texture information
+            if data["Table"][2]:
+                texture_line = data["Table"][2][0]
+                lowercase_second_texture = None
+                if data["Table"][2][1]:
+                    second_texture_descrip = data["Table"][2][1] #local phase is a backuup soil description
+                    lowercase_second_texture = second_texture_descrip.lower()
+
+                lowercase_texture = texture_line.lower()
+
+                matched_soil_type = None
+
+                # Iterate through the list of soil types and check for a match
+                for soil_type in soil_types:
+                    if soil_type.lower() in lowercase_texture:
+                        matched_soil_type = soil_type
+                        print(f'Found soil type: {lowercase_texture}')
+                        break
+                    elif lowercase_second_texture:  # if localphase exists
+                        if soil_type.lower() in lowercase_second_texture:
+                            matched_soil_type = soil_type
+                            print(f'Found soil type: {lowercase_second_texture}')
+                            break
+
+                return matched_soil_type
+        else:
+            print("No soil information found for the given coordinates.")
+    else:
+        print(f"Error: {response.status_code}, {response.text}")
 
 def get_soil_types_from_area(polygon_coords):
     """
@@ -832,28 +903,28 @@ def plot_combined_soil_map(combined_gdf, california_bounds):
     fig.show()
 
 
-# polygon_coords = [
-#     (37.9395672, -121.6291727),  # top left
-#     (37.9328473, -121.6291727),  # bottom left
-#     (37.9328473, -121.6263780),  # bottom right
-#     (37.9395672, -121.6263780),  # top right
-# ]
+polygon_coords = [
+    (37.9395672, -121.6291727),  # top left
+    (37.9328473, -121.6291727),  # bottom left
+    (37.9328473, -121.6263780),  # bottom right
+    (37.9395672, -121.6263780),  # top right
+]
 
 # Show the p
-# soil_types = get_soil_types_from_area(polygon_coords)
-# print("Soil types in the area:", soil_types)
-# 37.939035, -121.632079
-# 37.927273, -121.627589
-# "pk.eyJ1IjoiZ3JhZGllbnRvbGxpZSIsImEiOiJjbTN4bm05N2wxaXAzMmlvYjZlczRjeWJ3In0.LGkbg4xjs8TZLOLu1rSJvA"
+soil_types = get_soil_types_from_area(polygon_coords)
+print("Soil types in the area:", soil_types)
+37.939035, -121.632079
+37.927273, -121.627589
+"pk.eyJ1IjoiZ3JhZGllbnRvbGxpZSIsImEiOiJjbTN4bm05N2wxaXAzMmlvYjZlczRjeWJ3In0.LGkbg4xjs8TZLOLu1rSJvA"
 
 # Paths to KML files
-# kml_files = ["1241.kml", "1276.kml"]
-#
-# # Define California boundaries (approximate)
-# california_bounds = [-124.409591, 32.534156, -114.131211, 42.009518]  # [min_lon, min_lat, max_lon, max_lat]
-#
-# # Process KML files and get combined soil data
-# combined_soil_gdf = get_all_soil_data(kml_files)
-#
-# # Plot the combined soil data on Mapbox
-# plot_combined_soil_map(combined_soil_gdf, california_bounds)
+kml_files = ["1241.kml", "1276.kml"]
+
+# Define California boundaries (approximate)
+california_bounds = [-124.409591, 32.534156, -114.131211, 42.009518]  # [min_lon, min_lat, max_lon, max_lat]
+
+# Process KML files and get combined soil data
+combined_soil_gdf = get_all_soil_data(kml_files)
+
+# Plot the combined soil data on Mapbox
+plot_combined_soil_map(combined_soil_gdf, california_bounds)
