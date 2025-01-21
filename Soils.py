@@ -978,15 +978,16 @@ polygon_coords = [
 
 # Paths to KML files
 # kml_files = ["1263.kml"]
-#
-# # Define California boundaries (approximate)
+
+# Define California boundaries (approximate)
 # california_bounds = [-124.409591, 32.534156, -114.131211, 42.009518]  # [min_lon, min_lat, max_lon, max_lat]
-#
-# # Process KML files and get combined soil data
+
+# Process KML files and get combined soil data
 # combined_soil_gdf = get_all_soil_data(kml_files)
-#
-# # Plot the combined soil data on Mapbox
+
+# Plot the combined soil data on Mapbox
 # plot_combined_soil_map(combined_soil_gdf)
+# TODO add acres in each color
 
 # default token
 # mapbox_accesstoken="pk.eyJ1IjoiZ3JhZGllbnRvbGxpZSIsImEiOiJjbTN4bm05N2wxaXAzMmlvYjZlczRjeWJ3In0.LGkbg4xjs8TZLOLu1rSJvA"
