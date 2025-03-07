@@ -85,7 +85,32 @@ def visualize_soil_data(soil_data):
     plt.show()
 
 
-# Example polygon WKT
+def coords_to_wkt(coords):
+    """
+    Converts a list of coordinates in the format (latitude, longitude) into a WKT Polygon string.
+
+    Args:
+    - coords (list of tuples): A list of coordinates (latitude, longitude).
+
+    Returns:
+    - str: The WKT Polygon string.
+    """
+    if len(coords) < 3:
+        raise ValueError("At least three coordinates are required to form a polygon.")
+
+    # Ensure the polygon is closed by adding the first coordinate at the end
+    coords.append(coords[0])
+
+    # Convert each coordinate to the "longitude latitude" format
+    coords_str = ', '.join([f"{lon} {lat}" for lat, lon in coords])
+
+    # Format the coordinates into a WKT Polygon string
+    polygon_wkt = f"POLYGON(({coords_str}))"
+
+    return polygon_wkt
+
+
+# S&S field
 polygon_wkt = "POLYGON((-121.420000 36.850000, -121.410000 36.850000, -121.410000 36.860000, -121.420000 36.860000, -121.420000 36.850000))"
 
 # Get soil data

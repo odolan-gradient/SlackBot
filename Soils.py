@@ -13,6 +13,8 @@ from pykml import parser
 import geopandas as gpd
 import plotly.express as px
 import plotly.io as pio
+from PIL import Image
+import io
 
 class AllSoils(object):
     def __init__(self):
@@ -512,6 +514,77 @@ class Soil(object):
         else:
             return 'incorrect'
 
+def get_soil_type_from_coords(latitude, longitude):
+    """
+    Grabs soil type from ADA API given lat, long
+    :param latitude:
+    :param longitude:
+    :return:
+    """
+    print('Getting soil type')
+
+    point_wkt = f"POINT({longitude} {latitude})"
+    # SQL query to get soil texture information
+    query = f"""
+    SELECT mu.muname, c.localphase
+    FROM mapunit AS mu
+    JOIN component AS c ON c.mukey = mu.mukey
+    JOIN chorizon AS ch ON ch.cokey = c.cokey
+    WHERE mu.mukey IN (
+            SELECT DISTINCT mukey
+            FROM SDA_Get_Mukey_from_intersection_with_WktWgs84('{point_wkt}')
+        )
+    """
+
+    # SDA request payload
+    request_payload = {
+        "format": "JSON+COLUMNNAME+METADATA",
+        "query": query
+    }
+
+    sda_url = "https://sdmdataaccess.sc.egov.usda.gov/Tabular/SDMTabularService/post.rest"
+    headers = {'Content-Type': 'application/json'}
+    response = requests.post(sda_url, json=request_payload, headers=headers)
+
+    # soil types intentionally formatted, longest to shortest length
+    # so when we check if soil_type in response_string
+    soil_types = ['Silty Clay Loam', 'Sandy Clay Loam',
+                  'Sandy Clay', 'Silt Loam', 'Clay Loam',
+                  'Silty Clay', 'Loamy Sand', 'Sandy Loam',
+                  'Sand', 'Clay', 'Loam', 'Silt']
+
+    if response.status_code == 200:
+        data = response.json()
+        if "Table" in data:
+            # the row in the json containing soil texture information
+            if data["Table"][2]:
+                texture_line = data["Table"][2][0]
+                lowercase_second_texture = None
+                if data["Table"][2][1]:
+                    second_texture_descrip = data["Table"][2][1] #local phase is a backuup soil description
+                    lowercase_second_texture = second_texture_descrip.lower()
+
+                lowercase_texture = texture_line.lower()
+
+                matched_soil_type = None
+
+                # Iterate through the list of soil types and check for a match
+                for soil_type in soil_types:
+                    if soil_type.lower() in lowercase_texture:
+                        matched_soil_type = soil_type
+                        print(f'Found soil type: {lowercase_texture}')
+                        break
+                    elif lowercase_second_texture:  # if localphase exists
+                        if soil_type.lower() in lowercase_second_texture:
+                            matched_soil_type = soil_type
+                            print(f'Found soil type: {lowercase_second_texture}')
+                            break
+
+                return matched_soil_type
+        else:
+            print("No soil information found for the given coordinates.")
+    else:
+        print(f"Error: {response.status_code}, {response.text}")
 
 def get_soil_types_from_area(polygon_coords):
     """
@@ -560,7 +633,10 @@ def get_soil_type(muname, localphase):
     texture_line = muname
     second_texture_descrip = localphase
     lowercase_texture = texture_line.lower()
-    lowercase_second_texture = second_texture_descrip.lower()
+
+    lowercase_second_texture = None
+    if second_texture_descrip:  # if localphase
+        lowercase_second_texture = second_texture_descrip.lower()
 
     matched_soil_type = None
 
@@ -570,10 +646,11 @@ def get_soil_type(muname, localphase):
             matched_soil_type = soil_type
             print(f'Found soil type: {lowercase_texture}')
             break
-        elif soil_type.lower() in lowercase_second_texture:
-            matched_soil_type = soil_type
-            print(f'Found soil type: {lowercase_second_texture}')
-            break
+        elif lowercase_second_texture:  # if localphase exists
+            if soil_type.lower() in lowercase_second_texture:
+                matched_soil_type = soil_type
+                print(f'Found soil type: {lowercase_second_texture}')
+                break
     return matched_soil_type
 
 def process_mupolygon_data(data):
@@ -735,40 +812,81 @@ def kml_to_polygon_wkt(kml_file_path):
 
     return polygon_wkt
 
-def save_mapbox_image(fig, filename="mapbox_image.png"):
+
+def save_mapbox_image(fig, filename="mapbox_image.png", scale=2):
     """
     Saves a Mapbox map figure created with Plotly to an image file.
 
     Parameters:
     - fig (plotly.graph_objects.Figure): The Plotly figure object to save.
     - filename (str): The name of the output file (e.g., "mapbox_image.png").
-                      Supported formats: PNG, JPEG, SVG, PDF.
+    - scale (int): The scale factor for the image resolution.
 
     Returns:
     - None
     """
-    # Save the figure as an image
     try:
-        # Supported formats: png, jpg, jpeg, webp, svg, pdf
-        pio.write_image(fig, filename)
+        # Convert the figure to an image bytes
+        img_bytes = fig.to_image(format="png", scale=scale)
+
+        # Open the image using PIL
+        img = Image.open(io.BytesIO(img_bytes))
+
+        # Save the image
+        img.save(filename)
         print(f"Mapbox image saved as {filename}")
     except Exception as e:
         print(f"Error saving the mapbox image: {e}")
 
+
+def simplify_polygon_coords(coords, tolerance=0.001):
+    """
+    Simplifies the polygon by reducing the number of coordinates while maintaining its shape.
+    :param coords: List of (latitude, longitude) coordinates defining a polygon.
+    :param tolerance: Tolerance for simplification (higher means more simplification).
+    :return: Simplified list of coordinates.
+    """
+    # Create a Polygon from the coordinates
+    polygon = Polygon(coords)
+
+    # Simplify the polygon to reduce the number of points
+    simplified_polygon = polygon.simplify(tolerance, preserve_topology=True)
+
+    # Extract the simplified coordinates
+    simplified_coords = list(simplified_polygon.exterior.coords)
+
+    return simplified_coords
+
+
 def extract_boundaries_from_kml(kml_path):
     """
-    Extracts field boundaries (polygons) from a KML file.
+    Extracts field boundaries (polygons) from a KML file and simplifies them.
     :param kml_path: Path to the KML file.
-    :return: List of polygon coordinates (latitude, longitude).
+    :return: List of simplified polygon coordinates (latitude, longitude).
     """
     # Read the KML as a GeoDataFrame
     gdf = gpd.read_file(kml_path, driver='KML')
 
-    # Extract boundaries
     boundaries = []
     for _, row in gdf.iterrows():
         if row.geometry.is_valid:
-            boundaries.append([(coord[1], coord[0]) for coord in row.geometry.exterior.coords])
+            if row.geometry.geom_type == 'Polygon':
+                coords = [(coord[1], coord[0]) for coord in row.geometry.exterior.coords]
+
+                simplified_coords = simplify_polygon_coords(coords)
+                # Remove duplicate (first == last) coordinate
+                if simplified_coords[0] == simplified_coords[-1]:
+                    simplified_coords = simplified_coords[:-1]
+                boundaries.append(simplified_coords)
+            elif row.geometry.geom_type == 'MultiPolygon':
+                for poly in row.geometry.geoms:
+                    coords = [(coord[1], coord[0]) for coord in poly.exterior.coords]
+                    simplified_coords = simplify_polygon_coords(coords)
+                    # Remove duplicate (first == last) coordinate
+                    if simplified_coords[0] == simplified_coords[-1]:
+                        simplified_coords = simplified_coords[:-1]
+                    boundaries.append(simplified_coords)
+
     return boundaries
 
 
@@ -796,23 +914,35 @@ def get_all_soil_data(kml_files):
     return combined_gdf
 
 
-def plot_combined_soil_map(combined_gdf, california_bounds):
+def plot_combined_soil_map(combined_gdf):
     """
     Plots the combined GeoDataFrame of soil data on a Mapbox map.
     :param combined_gdf: Combined GeoDataFrame containing soil data.
-    :param california_bounds: Polygon of California's boundary for map fitting.
     """
-    # Ensure the GeoDataFrame has the correct CRS
+    # Ensure combined_gdf is a GeoDataFrame if it's not one already
+    if not isinstance(combined_gdf, gpd.GeoDataFrame):
+        # Create a GeoDataFrame by defining the 'geometry' column
+        combined_gdf = gpd.GeoDataFrame(combined_gdf, geometry="geometry")
+
+    # Set the CRS if it hasn't been set already (assuming original CRS is 'EPSG:3857')
+    if combined_gdf.crs is None:
+        combined_gdf.set_crs("EPSG:3857", allow_override=True, inplace=True)
+
+    # Convert the GeoDataFrame to the desired CRS (WGS84, EPSG:4326)
     combined_gdf = combined_gdf.to_crs("EPSG:4326")
 
     # Convert the GeoDataFrame to GeoJSON
     geojson_data = combined_gdf.__geo_interface__
 
-    # Calculate map center (California's centroid)
-    california_center = {
-        "lat": (california_bounds[1] + california_bounds[3]) / 2,
-        "lon": (california_bounds[0] + california_bounds[2]) / 2
+    # Calculate map center (based on the bounds of the combined_gdf)
+    bounds = combined_gdf.total_bounds  # [minx, miny, maxx, maxy]
+    map_center = {
+        "lat": (bounds[1] + bounds[3]) / 2,  # Midpoint latitude
+        "lon": (bounds[0] + bounds[2]) / 2   # Midpoint longitude
     }
+
+    # Set the zoom level based on the bounding box size
+    zoom_level = 12 - (bounds[2] - bounds[0]) * 10  # Adjust zoom dynamically
 
     # Plot the map
     fig = px.choropleth_mapbox(
@@ -821,33 +951,33 @@ def plot_combined_soil_map(combined_gdf, california_bounds):
         locations=combined_gdf.index,
         color="muname",  # Use soil types for coloring
         mapbox_style="carto-positron",
-        center=california_center,
-        zoom=5,  # Adjust zoom level to fit California
+        center=map_center,
+        zoom=zoom_level,  # Adjust zoom level based on bounds
         opacity=0.7
     )
 
     # Add your Mapbox token
-    fig.update_layout(mapbox_accesstoken="YOUR_MAPBOX_TOKEN")
-    save_mapbox_image(fig)
+    fig.update_layout(mapbox_accesstoken='sk.eyJ1IjoiZ3JhZGllbnRvbGxpZSIsImEiOiJjbTV5Z2RuZmgwajNvMmtvbndiaHYxNm1wIn0.U1uGDST-t6Pu5O2WTuoQnw')
+    # save_mapbox_image(fig)
     fig.show()
 
 
-# polygon_coords = [
-#     (37.9395672, -121.6291727),  # top left
-#     (37.9328473, -121.6291727),  # bottom left
-#     (37.9328473, -121.6263780),  # bottom right
-#     (37.9395672, -121.6263780),  # top right
-# ]
+polygon_coords = [
+    (37.9395672, -121.6291727),  # top left
+    (37.9328473, -121.6291727),  # bottom left
+    (37.9328473, -121.6263780),  # bottom right
+    (37.9395672, -121.6263780),  # top right
+]
 
-# Show the p
+#1263 kml bounds
+# polygon_coords = [(38.22001241, -121.62689789), (38.22948627, -121.6369282), (38.22928111, -121.63713793), (38.22701958, -121.6359769), (38.2253787, -121.63814319), (38.21413429, -121.62624929)]
+
+
 # soil_types = get_soil_types_from_area(polygon_coords)
 # print("Soil types in the area:", soil_types)
-# 37.939035, -121.632079
-# 37.927273, -121.627589
-# "pk.eyJ1IjoiZ3JhZGllbnRvbGxpZSIsImEiOiJjbTN4bm05N2wxaXAzMmlvYjZlczRjeWJ3In0.LGkbg4xjs8TZLOLu1rSJvA"
 
 # Paths to KML files
-# kml_files = ["1241.kml", "1276.kml"]
+# kml_files = ["1263.kml"]
 #
 # # Define California boundaries (approximate)
 # california_bounds = [-124.409591, 32.534156, -114.131211, 42.009518]  # [min_lon, min_lat, max_lon, max_lat]
@@ -856,4 +986,9 @@ def plot_combined_soil_map(combined_gdf, california_bounds):
 # combined_soil_gdf = get_all_soil_data(kml_files)
 #
 # # Plot the combined soil data on Mapbox
-# plot_combined_soil_map(combined_soil_gdf, california_bounds)
+# plot_combined_soil_map(combined_soil_gdf)
+
+# default token
+# mapbox_accesstoken="pk.eyJ1IjoiZ3JhZGllbnRvbGxpZSIsImEiOiJjbTN4bm05N2wxaXAzMmlvYjZlczRjeWJ3In0.LGkbg4xjs8TZLOLu1rSJvA"
+# mine
+# mapbox_token = 'sk.eyJ1IjoiZ3JhZGllbnRvbGxpZSIsImEiOiJjbTV5Z2RuZmgwajNvMmtvbndiaHYxNm1wIn0.U1uGDST-t6Pu5O2WTuoQnw'

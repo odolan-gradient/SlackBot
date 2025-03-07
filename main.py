@@ -11,6 +11,7 @@ import DBWriter
 import SQLScripts
 import SharedPickle
 import SheetsHandler
+import Soils
 
 load_dotenv()
 
@@ -88,7 +89,7 @@ def handle_get_soil(ack, body, respond):
 
     if len(coords) == 2:
         lat, long = coords
-        soil = get_soil_type_from_coords(lat, long)
+        soil = Soils.get_soil_type_from_coords(lat, long)
 
         # Log the request to Google Sheets
         request_name = 'Get Soil Type'
@@ -325,9 +326,10 @@ def handle_grower_menu(ack, body, client, respond):
 
     elif grower_action_id == 'grower_select_show':
         # Log the request to Google Sheets
+        print('Showing pickle')
         request_name = 'Show Pickle'
         info = selected_value
-        SheetsHandler.log_request_to_sheet(request_name, username, info)
+        # SheetsHandler.log_request_to_sheet(request_name, username, info)
 
         grower = SharedPickle.get_grower(selected_value)
         pickle_contents = grower.to_string()
@@ -481,7 +483,7 @@ def date_picker_block():
                     "emoji": True
                 },
                 "action_id": "start_date_select",
-                "initial_date": "2024-01-01"  # Optional: initial date for the picker
+                "initial_date": "2025-01-01"  # Optional: initial date for the picker
             }
         },
         {
@@ -498,7 +500,7 @@ def date_picker_block():
                     "emoji": True
                 },
                 "action_id": "end_date_select",
-                "initial_date": "2024-01-02"  # Optional: initial date for the picker
+                "initial_date": "2025-01-02"  # Optional: initial date for the picker
             }
         }
     ]
@@ -745,7 +747,7 @@ def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str,
     print(f'Changing soil type for logger: {logger_name} to {new_soil_type}')
 
     growers = SharedPickle.open_pickle()
-    dbw = DBWriter.DBWriter()
+    dbw = DBWriter()
 
     # Change soil type in the pickle
     print('-Changing soil type in the pickle')
@@ -777,80 +779,6 @@ def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str,
     print(f'Soil type for {logger_name} changed from {old_soil_type} to {new_soil_type}')
     print()
 
-
-def get_soil_type_from_coords(latitude, longitude):
-    """
-    Grabs soil type from ADA API given lat, long
-    :param latitude:
-    :param longitude:
-    :return:
-    """
-    point_wkt = f"POINT({longitude} {latitude})"
-    # SQL query to get soil texture information
-    query = f"""
-    SELECT mu.muname, c.localphase
-    FROM mapunit AS mu
-    JOIN component AS c ON c.mukey = mu.mukey
-    JOIN chorizon AS ch ON ch.cokey = c.cokey
-    WHERE mu.mukey IN (
-            SELECT DISTINCT mukey
-            FROM SDA_Get_Mukey_from_intersection_with_WktWgs84('{point_wkt}')
-        )
-    """
-
-    # SDA request payload
-    request_payload = {
-        "format": "JSON+COLUMNNAME+METADATA",
-        "query": query
-    }
-
-    sda_url = "https://sdmdataaccess.sc.egov.usda.gov/Tabular/SDMTabularService/post.rest"
-    headers = {'Content-Type': 'application/json'}
-    response = requests.post(sda_url, json=request_payload, headers=headers)
-
-    # soil types intentionally formatted, longest to shortest length
-    # so when we check if soil_type in response_string
-    soil_types = ['Silty Clay Loam', 'Sandy Clay Loam',
-                  'Sandy Clay', 'Silt Loam', 'Clay Loam',
-                  'Silty Clay', 'Loamy Sand', 'Sandy Loam',
-                  'Sand', 'Clay', 'Loam', 'Silt']
-
-    if response.status_code == 200:
-        data = response.json()
-        if "Table" in data:
-            # the row in the json containing soil texture information
-            if data["Table"][2]:
-                texture_line = data["Table"][2][0]
-                lowercase_second_texture = None
-                if data["Table"][2][1]:
-                    second_texture_descrip = data["Table"][2][1] #local phase is a backuup soil description
-                    lowercase_second_texture = second_texture_descrip.lower()
-
-                lowercase_texture = texture_line.lower()
-
-                matched_soil_type = None
-
-                # Iterate through the list of soil types and check for a match
-                for soil_type in soil_types:
-                    if soil_type.lower() in lowercase_texture:
-                        matched_soil_type = soil_type
-                        print(f'Found soil type: {lowercase_texture}')
-                        break
-                    elif lowercase_second_texture:  # if localphase exists
-                        if soil_type.lower() in lowercase_texture:
-                            matched_soil_type = soil_type
-                            print(f'Found soil type: {lowercase_second_texture}')
-                            break
-
-                return matched_soil_type
-        else:
-            print("No soil information found for the given coordinates.")
-    else:
-        print(f"Error: {response.status_code}, {response.text}")
-
-
-
-
 # Entry point for Google Cloud Functions
 @flask_app.route('/slack/events', methods=['POST'])
 def slack_events():
@@ -875,3 +803,4 @@ if __name__ == "__main__":
 # https://us-central1-rich-meridian-430023-j1.cloudfunctions.net/slackBot/slack/events
 
 # use_prev_days_menu()
+# get_soil_type_from_coords(36.754599, -120.453252)
