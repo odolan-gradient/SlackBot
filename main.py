@@ -289,6 +289,7 @@ def handle_grower_menu(ack, body, client, respond):
     selected_value = body['actions'][0]['selected_options'][0]['value']
     # Ampersands come in weird through slack
     selected_value = fix_ampersand(selected_value)
+    print(selected_value)
     grower = SharedPickle.get_grower(selected_value)
     field_list = [field.name for field in grower.fields]
     username = body['user']['name']
@@ -744,7 +745,7 @@ def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str,
     print(f'Changing soil type for logger: {logger_name} to {new_soil_type}')
 
     growers = SharedPickle.open_pickle()
-    dbw = DBWriter()
+    dbw = DBWriter.DBWriter()
 
     # Change soil type in the pickle
     print('-Changing soil type in the pickle')
@@ -820,9 +821,12 @@ def get_soil_type_from_coords(latitude, longitude):
             # the row in the json containing soil texture information
             if data["Table"][2]:
                 texture_line = data["Table"][2][0]
-                second_texture_descrip = data["Table"][2][1]
+                lowercase_second_texture = None
+                if data["Table"][2][1]:
+                    second_texture_descrip = data["Table"][2][1] #local phase is a backuup soil description
+                    lowercase_second_texture = second_texture_descrip.lower()
+
                 lowercase_texture = texture_line.lower()
-                lowercase_second_texture = second_texture_descrip.lower()
 
                 matched_soil_type = None
 
@@ -832,10 +836,11 @@ def get_soil_type_from_coords(latitude, longitude):
                         matched_soil_type = soil_type
                         print(f'Found soil type: {lowercase_texture}')
                         break
-                    elif soil_type.lower() in lowercase_second_texture:
-                        matched_soil_type = soil_type
-                        print(f'Found soil type: {lowercase_second_texture}')
-                        break
+                    elif lowercase_second_texture:  # if localphase exists
+                        if soil_type.lower() in lowercase_texture:
+                            matched_soil_type = soil_type
+                            print(f'Found soil type: {lowercase_second_texture}')
+                            break
 
                 return matched_soil_type
         else:
@@ -857,6 +862,7 @@ def slack_bot(request):
     return slack_events()
 
 
+
 # If you want to run locally (not needed for Cloud Functions)
 if __name__ == "__main__":
     flask_app.run(port=int(os.getenv("PORT", 3000)))
@@ -867,3 +873,5 @@ if __name__ == "__main__":
 # https://seal-app-er6sr.ondigitalocean.app/slack/events
 # interactivity is the one that determines the debug
 # https://us-central1-rich-meridian-430023-j1.cloudfunctions.net/slackBot/slack/events
+
+# use_prev_days_menu()
