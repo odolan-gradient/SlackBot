@@ -747,7 +747,7 @@ def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str,
     print(f'Changing soil type for logger: {logger_name} to {new_soil_type}')
 
     growers = SharedPickle.open_pickle()
-    dbw = DBWriter()
+    dbw = DBWriter.DBWriter()
 
     # Change soil type in the pickle
     print('-Changing soil type in the pickle')
