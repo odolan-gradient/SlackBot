@@ -35,7 +35,11 @@ fields = [field.name for grower in growers for field in grower.fields]
 def main_menu_command(ack, body, respond):
     try:
         ack()
-        menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Show Pickle', 'Use Previous Days VWC', 'Add Grower Billing']
+        if body['user_name'] in ['odolan', 'jgarrido']:
+            menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Show Pickle', 'Use Previous Days VWC',
+                            'Add Grower Billing']
+        else:
+            menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Show Pickle', 'Add Grower Billing']
         main_menu(ack, respond, menu_options)
     except Exception as e:
         print(f"Error: {e}")
@@ -163,7 +167,8 @@ def handle_toggle_psi(ack, body, respond):
     elif action_id in ['psi_on', 'psi_off']:  # on or off
         user_selections[user_id][action_id] = body['actions'][0]['value']
 
-    if 'logger_select_psi' in user_selections[user_id] and ('psi_on' in user_selections[user_id] or 'psi_off' in user_selections[user_id]):
+    if 'logger_select_psi' in user_selections[user_id] and (
+            'psi_on' in user_selections[user_id] or 'psi_off' in user_selections[user_id]):
         loggers = user_selections[user_id]['logger_select_psi']
         field = user_selections[user_id]['field']
         grower = user_selections[user_id]['grower']
@@ -256,7 +261,8 @@ def handle_field_select(ack, body, respond):
 
     logger_list = [logger.name for logger in field_obj.loggers]
     if callback_id == 'field_select_change_soil':
-        soil_types = ['Sand (10-5)', 'Loamy Sand (12-5)', 'Sandy Loam (18-8)', 'Sandy Clay Loam (27-17)', 'Loam (28-14)', 'Sandy Clay (36-25)', 'Silt Loam (31-11)', 'Silt (30-6)',
+        soil_types = ['Sand (10-5)', 'Loamy Sand (12-5)', 'Sandy Loam (18-8)', 'Sandy Clay Loam (27-17)',
+                      'Loam (28-14)', 'Sandy Clay (36-25)', 'Silt Loam (31-11)', 'Silt (30-6)',
                       'Clay Loam (36-22)', 'Silty Clay Loam (38-22)', 'Silty Clay (41-27)', 'Clay (42-30)']
         logger_and_soil_list_menu(ack, respond, logger_list, soil_types)
 
@@ -420,7 +426,6 @@ def logger_and_soil_list_menu(ack, respond, logger_list, soil_types):
 
 
 def logger_and_toggle_menu(logger_list):
-
     # Define the logger block
     logger_action_id = 'logger_select_psi'
     logger_block = logger_select_block(logger_list, logger_action_id)
@@ -467,6 +472,7 @@ def logger_and_toggle_menu(logger_list):
     blocks = [logger_block] + toggle_block
     return blocks
 
+
 def date_picker_block():
     return [
         {
@@ -504,6 +510,8 @@ def date_picker_block():
             }
         }
     ]
+
+
 def vwc_select_block(action_id):
     vwcs = ['VWC 1', 'VWC 2', 'VWC 3']
     return {
@@ -523,6 +531,7 @@ def vwc_select_block(action_id):
             "action_id": action_id
         }
     }
+
 
 def logger_and_dates_menu(ack, respond, logger_list):
     print("logger_and_dates_menu function called")
@@ -669,6 +678,7 @@ def use_prev_days_menu(ack, respond):
 
     respond(response)
 
+
 def add_billing_menu(ack, respond):
     ack()
     action_id = 'grower_select_billing'
@@ -727,11 +737,9 @@ def toggle_psi(grower_name, field_name, logger_name, psi_toggle):
                             if psi_toggle == 'off':  # if On
                                 response_text += f'Turned Off IR for {logger.name}\n'
                                 logger.ir_active = False
-                                continue
                             if psi_toggle == 'on':
                                 response_text += f'Turned On IR for {logger.name}\n'
                                 logger.ir_active = True
-                                continue
     return response_text
 
 
@@ -779,6 +787,7 @@ def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str,
     print(f'Soil type for {logger_name} changed from {old_soil_type} to {new_soil_type}')
     print()
 
+
 # Entry point for Google Cloud Functions
 @flask_app.route('/slack/events', methods=['POST'])
 def slack_events():
@@ -790,10 +799,9 @@ def slack_bot(request):
     return slack_events()
 
 
-
 # If you want to run locally (not needed for Cloud Functions)
-if __name__ == "__main__":
-    flask_app.run(port=int(os.getenv("PORT", 3000)))
+# if __name__ == "__main__":
+#     flask_app.run(port=int(os.getenv("PORT", 3000)))
 
 # if __name__ == "__main__":
 #     app.start(port=int(os.getenv("PORT", 3000)))
@@ -801,6 +809,8 @@ if __name__ == "__main__":
 # https://seal-app-er6sr.ondigitalocean.app/slack/events
 # interactivity is the one that determines the debug
 # https://us-central1-rich-meridian-430023-j1.cloudfunctions.net/slackBot/slack/events
+# https://seal-app-er6sr.ondigitalocean.app/slack/events
 
 # use_prev_days_menu()
 # get_soil_type_from_coords(36.754599, -120.453252)
+# toggle_psi('Andrew', 'Andrew3101-3103', '3101-3101A-NW', 'off')
