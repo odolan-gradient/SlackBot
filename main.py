@@ -35,7 +35,7 @@ fields = [field.name for grower in growers for field in grower.fields]
 def main_menu_command(ack, body, respond):
     try:
         ack()
-        if body['user_name'] in ['odolan', 'jgarrido']:
+        if body['user_id'] in ['U06NJRAT1T2', 'U4KFKMH8C']:
             menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Show Pickle', 'Use Previous Days VWC',
                             'Add Grower Billing']
         else:
