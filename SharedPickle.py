@@ -2,6 +2,7 @@ import io
 import json
 import os
 import pickle
+import pytz
 
 from google.cloud import storage
 from google.oauth2 import service_account
@@ -11,6 +12,10 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from dotenv import load_dotenv
 from pathlib import Path, PosixPath, PureWindowsPath
+from flask import Flask, jsonify
+from datetime import date, datetime, timedelta
+
+import SheetsHandler
 
 try:
     from pathlib import WindowsPath
@@ -21,16 +26,16 @@ from DBWriter import DBWriter
 load_dotenv()
 
 # Constants
-DIRECTORY_YEAR = "2024"
-PICKLE_NAME = f"{DIRECTORY_YEAR}_pickle.pickle"
+DIRECTORY_YEAR = "2025"
+PICKLE_NAME = f"{DIRECTORY_YEAR}_pickle_test.pickle"
 PICKLE_DIRECTORY = "H:\\Shared drives\\Stomato\\" + DIRECTORY_YEAR + "\\Pickle\\"
 
-# SHARED_DRIVE_ID = '0ACxUDm7mZyTVUk9PVA' # test
-SHARED_DRIVE_ID = '13PoBmmfF0VqVRzkF0CRjdr2kGX127zKg'  # real
-# PICKLE_FILE_ID = '1PDDYup0B33x1Xi1jX2IpRtYxzjuRfNJ2'  # test
-PICKLE_FILE_ID = '1SmAIHpGie1X440xjUyG1VPdcXkQtGM2v'  # real
+SHARED_DRIVE_ID = '0ACxUDm7mZyTVUk9PVA' # real
+# SHARED_DRIVE_ID = '12TwRTStB7JMH7x8rg7VsMc5Dczw_9UkV'  # test
+# PICKLE_FILE_ID = '1pOIU5by64wTzVRCz5UaayzaFnHyMLv9k'  # 2025 test pickle
+PICKLE_FILE_ID = '1ywkb4_okDaBiMsju1nSbd6TvJjJ8XHRI' #2025
 # CREDENTIALS_FILE = r'C:\Users\odolan\PycharmProjects\SlackBot\client_secret_creds.json'
-
+#  trash pickle 1L-HCL32sR3rroEel293HAON_Q1wXqu6y, 1Kvb53U9rZoDlGRNljsfWIcdTofSkK2Zh
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
 credentials_info = {
@@ -107,21 +112,34 @@ def convert_to_pure_windows_path(obj):
 
 def open_pickle(file_id=PICKLE_FILE_ID, service=service):
     try:
-        request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
-        fh = io.BytesIO()
-        downloader = MediaIoBaseDownload(fh, request)
+        # Get latest version ID first
+        metadata = service.files().get(
+            fileId=file_id,
+            fields='name, modifiedTime',
+            supportsAllDrives=True  # need for shared drives
+        ).execute()
 
-        done = False
-        while not done:
-            status, done = downloader.next_chunk()
+        if check_if_pickle_valid(metadata):
+            # request = service.files().get_media(fileId=file_id, fields='name, modifiedTime', supportsAllDrives=True)
+            request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
+            # file_metadata = request.execute()
 
-        fh.seek(0)
+            fh = io.BytesIO()  # file handler
+            downloader = MediaIoBaseDownload(fh, request)  # takes the api request and file handler (place to store the data)
 
-        # Use CustomUnpickler to load the data, treating WindowsPath as PureWindowsPath
-        unpickler = CustomUnpickler(fh)
-        data = unpickler.load()
+            done = False
+            while not done:
+                status, done = downloader.next_chunk()
 
-        return data
+            fh.seek(0)
+
+            # Use CustomUnpickler to load the data, treating WindowsPath as PureWindowsPath
+            unpickler = CustomUnpickler(fh)
+            data = unpickler.load()
+
+            return data
+        else:
+            print(f'Error Pickle sync issue not using todays pickle')
     except Exception as e:
         print(f"Error reading from Shared Drive: {e}")
         return None
@@ -132,6 +150,7 @@ def write_pickle(data, file_id=PICKLE_FILE_ID, service=service):
         # Convert Path objects to PureWindowsPath before writing
         data = convert_to_pure_windows_path(data)
 
+        # Check if current ve
         fh = io.BytesIO()
         pickle.dump(data, fh)
         fh.seek(0)
@@ -150,6 +169,20 @@ def write_pickle(data, file_id=PICKLE_FILE_ID, service=service):
         print(f"Error writing to Shared Drive: {e}")
         return None
 
+def check_if_pickle_valid(metadata):
+    # Parse the UTC datetime string
+    utc_time = datetime.strptime(metadata['modifiedTime'], "%Y-%m-%dT%H:%M:%S.%fZ")
+    utc_time = utc_time.replace(tzinfo=pytz.utc)
+
+    # Convert to California time (PDT in April)
+    california_tz = pytz.timezone("America/Los_Angeles")
+    local_time = utc_time.astimezone(california_tz)
+
+    # Check if the date matches today's date in California
+    today_local = datetime.now(california_tz).date()
+    is_today = local_time.date() == today_local
+
+    return is_today
 
 def list_files():
     # List all files that the service account has access to
@@ -267,9 +300,7 @@ def get_project(field_name: str, grower_name: str = ''):
 
 # Example usage in your Slack bot
 def slack_bot(request):
-    # Your existing Slack bot code here...
     growers = open_pickle()
-    # ... rest of your code ...
     write_pickle(growers)
     pass
 
@@ -278,8 +309,18 @@ def slack_bot(request):
 def main(request):
     return slack_bot(request)
 
+def scheduled_task(request):
+    """
+    Function triggered by Cloud Scheduler via HTTP.
+    """
+    # Your scheduled task logic here
+    print("Task executed at scheduled time.")
+    return jsonify({"status": "success", "message": "Task executed."})
 
 # growers = open_pickle()
+# print()
 # write_pickle(growers)
+# list_shared_drive_files()
 # show_pickle()
 # list_shared_drive_files()
+# get_grower('S&S Farms')

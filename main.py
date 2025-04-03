@@ -19,6 +19,7 @@ app = App(
     token=os.getenv("SLACK_BOT_TOKEN"),
     signing_secret=os.getenv("SLACK_SIGNING_SECRET")
 )
+
 flask_app = Flask(__name__)
 handler = SlackRequestHandler(app)
 
@@ -93,7 +94,7 @@ def handle_get_soil(ack, body, respond):
 
     if len(coords) == 2:
         lat, long = coords
-        soil = Soils.get_soil_type_from_coords(lat, long)
+        soil, status = Soils.get_soil_type_from_coords(lat, long)
 
         # Log the request to Google Sheets
         request_name = 'Get Soil Type'
@@ -131,17 +132,17 @@ def handle_soil_and_psi_selections(ack, body, respond):
         grower = user_selections[user_id]['grower']
         grower_name = grower.name
 
+        for logger in loggers:
+            change_logger_soil_type(logger, field, grower_name, soil_type)
+        response_text = f"Changing the following:\nLoggers: {', '.join(loggers)} to Soil Type: {soil_type}"
+        respond(text=response_text)
+
         # Log the request to Google Sheets
         request_name = 'Change Soil Type'
         logger_str = ', '.join(loggers)
         info = f'{field} {logger_str} {soil_type}'
         username = body['user']['name']
         SheetsHandler.log_request_to_sheet(request_name, username, info)
-
-        for logger in loggers:
-            change_logger_soil_type(logger, field, grower_name, soil_type)
-        response_text = f"Changing the following:\nLoggers: {', '.join(loggers)} to Soil Type: {soil_type}"
-        respond(text=response_text)
 
         # Clear the selections for this user
         del user_selections[user_id]
@@ -177,17 +178,20 @@ def handle_toggle_psi(ack, body, respond):
             on_or_off = user_selections[user_id]['psi_on']
         elif 'psi_off' in user_selections[user_id]:
             on_or_off = user_selections[user_id]['psi_off']
-        # Log the request to Google Sheets
-        request_name = 'Toggle PSI'
-        info = f'{field} {loggers} {on_or_off}'
-        username = body['user']['name']
-        SheetsHandler.log_request_to_sheet(request_name, username, info)
+
 
         response_text = ''
         for logger in loggers:
             response_text += toggle_psi(grower_name, field, logger, on_or_off)
         SharedPickle.write_pickle(growers)
         respond(text=response_text)
+
+        # Log the request to Google Sheets
+        request_name = 'Toggle PSI'
+        info = f'{field} {loggers} {on_or_off}'
+        username = body['user']['name']
+        SheetsHandler.log_request_to_sheet(request_name, username, info)
+
         # Clear the selections for this user
         del user_selections[user_id]
 
@@ -224,16 +228,16 @@ def handle_prev_day_selections(ack, body, respond):
         project = SharedPickle.get_project(field, grower_name)
         vwcs = user_selections[user_id]['vwc_depth_select']
 
+        for logger in loggers:
+            SQLScripts.update_vwc_for_date_range(project, field, logger, start_date, end_date, vwcs)
+        response_text = f"Using previous day VWC for the following:\nLoggers: {', '.join(loggers)} at {vwcs}"
+        respond(text=response_text)
+
         # Log the request to Google Sheets
         request_name = 'Use Previous Days VWC'
         info = ', '.join(loggers) + ', ' + ', '.join(map(str, vwcs))
         username = body['user']['name']
         SheetsHandler.log_request_to_sheet(request_name, username, info)
-
-        for logger in loggers:
-            SQLScripts.update_vwc_for_date_range(project, field, logger, start_date, end_date, vwcs)
-        response_text = f"Using previous day VWC for the following:\nLoggers: {', '.join(loggers)} at {vwcs}"
-        respond(text=response_text)
 
         # Clear the selections for this user
         del user_selections[user_id]
@@ -331,10 +335,7 @@ def handle_grower_menu(ack, body, client, respond):
         SheetsHandler.log_request_to_sheet(request_name, username, info)
 
     elif grower_action_id == 'grower_select_show':
-        # Log the request to Google Sheets
-        print('Showing pickle')
-        request_name = 'Show Pickle'
-        info = selected_value
+
         # SheetsHandler.log_request_to_sheet(request_name, username, info)
 
         grower = SharedPickle.get_grower(selected_value)
@@ -355,7 +356,10 @@ def handle_grower_menu(ack, body, client, respond):
                 as_user=True
             )
 
-
+        # Log the request to Google Sheets
+        print('Showing pickle')
+        request_name = 'Show Pickle'
+        info = selected_value
 def change_soil_menu(ack, respond):
     ack()
     action_id = 'grower_select_change_soil'
@@ -814,3 +818,4 @@ def slack_bot(request):
 # use_prev_days_menu()
 # get_soil_type_from_coords(36.754599, -120.453252)
 # toggle_psi('Andrew', 'Andrew3101-3103', '3101-3101A-NW', 'off')
+# change_logger_soil_type('BR-7A-C', 'Bays Ranch7A', 'Bays Ranch', new_soil_type='Clay Loam')
