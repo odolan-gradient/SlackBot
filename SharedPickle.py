@@ -119,8 +119,10 @@ def open_pickle(file_id=PICKLE_FILE_ID, service=service):
             supportsAllDrives=True  # need for shared drives
         ).execute()
 
+        print(f'Pickle ID: {file_id}')
         if check_if_pickle_valid(metadata):
             # request = service.files().get_media(fileId=file_id, fields='name, modifiedTime', supportsAllDrives=True)
+
             request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
             # file_metadata = request.execute()
 
@@ -177,7 +179,7 @@ def check_if_pickle_valid(metadata):
     # Convert to California time (PDT in April)
     california_tz = pytz.timezone("America/Los_Angeles")
     local_time = utc_time.astimezone(california_tz)
-
+    print(f'Pickle timestamp: {local_time}')
     # Check if the date matches today's date in California
     today_local = datetime.now(california_tz).date()
     is_today = local_time.date() == today_local
