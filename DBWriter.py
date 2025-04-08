@@ -12,7 +12,7 @@ from google.oauth2 import service_account
 # Base Class for writing Decagon sensor data to Google BigQuery    #
 # Expand this class for changes to what is written                 #
 ####################################################################
-DIRECTORY_YEAR = "2024"
+DIRECTORY_YEAR = "2025"
 DATABASE_YEAR = DIRECTORY_YEAR
 LOGGERS_BIGQUERY_PROJECT = 'stomato-' + DATABASE_YEAR
 LOGGERS_PERMANENT_BIGQUERY_PROJECT = 'stomato-permanents'

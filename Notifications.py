@@ -5,7 +5,7 @@ from pathlib import Path
 
 from EmailProcessor import EmailProcessor
 
-DIRECTORY_YEAR = "2024"
+DIRECTORY_YEAR = "2025"
 NOTIFICATION_DIRECTORY = "H:\\Shared drives\\Stomato\\" + DIRECTORY_YEAR
 
 class AllNotifications(object):

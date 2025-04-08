@@ -22,7 +22,7 @@ from Soils import Soil
 from Technician import Technician
 from Thresholds import Thresholds
 
-DIRECTORY_YEAR = "2024"
+DIRECTORY_YEAR = "2025"
 DXD_DIRECTORY = "H:\\Shared drives\\Stomato\\" + DIRECTORY_YEAR + "\\Dxd Files\\"
 
 
