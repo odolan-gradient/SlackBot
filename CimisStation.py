@@ -122,31 +122,8 @@ class CimisStation(object):
 
 
 
-
-# cimisStationList2 = []
-# cimisStationList = []
+#
 # cimisStations = CimisStation()
-# cimisStations.activate_cimis_station('7')
-# cimisStations.deactivate_cimis_station('222')
-# cimisStations.deactivate_cimis_station('169')
-# print(cimisStations.return_inactive_cimis_stations_list())
-# print(cimisStations.return_list_of_stations())
-# print(cimisStations.get_latest_eto_specific_station('15'))
-# print(cimisStations.return_list_of_stations())
-# cimisStations.showCimisStations()
-# cimisStations.check_for_new_cimis_stations()
-# cimisStationsPickle = cimisStations.open_cimis_station_pickle()
-# for f in cimisStationsPickle:
-#     f.active = True
-#     print(f"{f.station_number}: {f.active}")
-#     f.latest_eto_value = float(f.latest_eto_value)
-#     print(f.station_number, ":", f.latest_eto_value)
-# if f.station_number == '146':
-#     f.latest_eto_value = .29
-# x = input("Cimis Station: " + f.station_number + "\n")
-# f.latest_eto_value = x
-# cimisStations.write_cimis_station_pickle(cimisStationsPickle)
-# cimisStations.removeStation('125')
-# print(cimisStationList)
+# cimisStations = cimisStations.open_cimis_station_pickle()
 # for f in cimisStations:
 #     print(f.station_number)

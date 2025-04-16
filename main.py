@@ -26,9 +26,9 @@ handler = SlackRequestHandler(app)
 user_selections = defaultdict(dict)
 
 # Example lists for dropdown options
-growers = SharedPickle.open_pickle()
-grower_names = [grower.name for grower in growers]
-fields = [field.name for grower in growers for field in grower.fields]
+# growers = SharedPickle.open_pickle()
+# grower_names = [grower.name for grower in growers]
+# fields = [field.name for grower in growers for field in grower.fields]
 
 
 @app.command("/menu")
@@ -62,20 +62,21 @@ def generate_options(list_of_items):
 @app.action("menu_select")
 def handle_main_menu(ack, body, respond):
     ack()
-
+    growers = SharedPickle.open_pickle()
+    grower_names = [grower.name for grower in growers]
     menu_option = body['actions'][0]['selected_option']['value']
     if menu_option == 'Change Soil Type':
-        change_soil_menu(ack, respond)
+        change_soil_menu(ack, respond, grower_names)
     elif menu_option == 'Get Soil Type':
         get_soil_menu(ack, respond)
     elif menu_option == 'Toggle PSI':
-        turn_on_psi_menu(ack, respond)
+        turn_on_psi_menu(ack, respond, grower_names)
     elif menu_option == 'Show Pickle':
-        show_pickle_menu(ack, respond)
+        show_pickle_menu(ack, respond, grower_names)
     elif menu_option == 'Use Previous Days VWC':
-        use_prev_days_menu(ack, respond)
+        use_prev_days_menu(ack, respond, grower_names)
     elif menu_option == 'Add Grower Billing':
-        add_billing_menu(ack, respond)
+        add_billing_menu(ack, respond, grower_names)
 
 
 @app.action("get_soil_type")
@@ -174,6 +175,7 @@ def handle_toggle_psi(ack, body, respond):
         field = user_selections[user_id]['field']
         grower = user_selections[user_id]['grower']
         grower_name = grower.name
+        on_or_off = 'on'
         if 'psi_on' in user_selections[user_id]:
             on_or_off = user_selections[user_id]['psi_on']
         elif 'psi_off' in user_selections[user_id]:
@@ -181,8 +183,10 @@ def handle_toggle_psi(ack, body, respond):
 
 
         response_text = ''
+        growers = SharedPickle.open_pickle()
         for logger in loggers:
-            response_text += toggle_psi(grower_name, field, logger, on_or_off)
+            response_text += toggle_psi(grower_name, field, logger, on_or_off, growers)
+        growers = SharedPickle.open_pickle()
         SharedPickle.write_pickle(growers)
         respond(text=response_text)
 
@@ -322,7 +326,7 @@ def handle_grower_menu(ack, body, client, respond):
         field_list_menu(ack, respond, field_list, action_id)
 
     elif grower_action_id == 'grower_select_billing':
-        result = SheetsHandler.billing_report(grower.name)
+        result = SheetsHandler.billing_report_new_tab(grower.name)
         link = 'https://docs.google.com/spreadsheets/d/137KpyvSKY_LCqiups4EAcwMQPYHV_a55bjwRQAMEX_k/edit?gid=0#gid=0'
         if result:
             respond(f'Added {grower.name} to the sheet\nView here: {link}')
@@ -360,7 +364,7 @@ def handle_grower_menu(ack, body, client, respond):
         print('Showing pickle')
         request_name = 'Show Pickle'
         info = selected_value
-def change_soil_menu(ack, respond):
+def change_soil_menu(ack, respond, grower_names):
     ack()
     action_id = 'grower_select_change_soil'
     response = {
@@ -655,7 +659,7 @@ def get_soil_menu(ack, respond):
     )
 
 
-def show_pickle_menu(ack, respond):
+def show_pickle_menu(ack, respond, grower_names):
     ack()
     action_id = 'grower_select_show'
     response = {
@@ -669,7 +673,7 @@ def show_pickle_menu(ack, respond):
     respond(response)
 
 
-def use_prev_days_menu(ack, respond):
+def use_prev_days_menu(ack, respond, grower_names):
     ack()
     action_id = 'grower_select_prev_day'
     response = {
@@ -683,7 +687,7 @@ def use_prev_days_menu(ack, respond):
     respond(response)
 
 
-def add_billing_menu(ack, respond):
+def add_billing_menu(ack, respond, grower_names):
     ack()
     action_id = 'grower_select_billing'
     response = {
@@ -715,7 +719,7 @@ def grower_select_block(grower_names, action_id):
     }
 
 
-def turn_on_psi_menu(ack, respond):
+def turn_on_psi_menu(ack, respond, grower_names):
     ack()
     action_id = 'grower_select_psi'
 
@@ -730,7 +734,7 @@ def turn_on_psi_menu(ack, respond):
     respond(response)
 
 
-def toggle_psi(grower_name, field_name, logger_name, psi_toggle):
+def toggle_psi(grower_name, field_name, logger_name, psi_toggle, growers):
     response_text = ''
     for grower in growers:
         if grower.name == grower_name:
@@ -760,6 +764,7 @@ def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str,
 
     growers = SharedPickle.open_pickle()
     dbw = DBWriter.DBWriter()
+    crop_type = None
 
     # Change soil type in the pickle
     print('-Changing soil type in the pickle')
@@ -779,18 +784,20 @@ def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str,
     print('\tDone with pickle')
 
     # Change soil type parameters in the DB
-    print('-Changing soil type in the db')
-    field_name_db = dbw.remove_unwanted_chars_for_db_dataset(field_name)
-    db_project = dbw.get_db_project(crop_type)
-    dml = (f'UPDATE `{db_project}.{field_name_db}.{logger_name}` '
-           f'SET field_capacity = {field_capacity}, wilting_point = {wilting_point} '
-           f'WHERE TRUE')
-    result = dbw.run_dml(dml)
-    print(f'\tDone with DB')
-    print()
-    print(f'Soil type for {logger_name} changed from {old_soil_type} to {new_soil_type}')
-    print()
-
+    if crop_type:
+        print('-Changing soil type in the db')
+        field_name_db = dbw.remove_unwanted_chars_for_db_dataset(field_name)
+        db_project = dbw.get_db_project(crop_type)
+        dml = (f'UPDATE `{db_project}.{field_name_db}.{logger_name}` '
+               f'SET field_capacity = {field_capacity}, wilting_point = {wilting_point} '
+               f'WHERE TRUE')
+        result = dbw.run_dml(dml)
+        print(f'\tDone with DB')
+        print()
+        print(f'Soil type for {logger_name} changed from {old_soil_type} to {new_soil_type}')
+        print()
+    else:
+        print('Error: problem finding logger')
 
 # Entry point for Google Cloud Functions
 @flask_app.route('/slack/events', methods=['POST'])

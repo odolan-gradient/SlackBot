@@ -33,7 +33,7 @@ from SwitchTestCase import SwitchTestCase
 from Technician import Technician
 from WeatherStation import WeatherStation
 
-DIRECTORY_YEAR = "2024"
+DIRECTORY_YEAR = "2025"
 PICKLE_DIRECTORY = "H:\\Shared drives\\Stomato\\" + DIRECTORY_YEAR + "\\Pickle\\"
 BACKUP_PICKLE_DIRECTORY = "H:\\Shared drives\\Stomato\\" + DIRECTORY_YEAR + "\\Pickle\\Backup\\"
 PICKLE_NAME = DIRECTORY_YEAR + "_pickle.pickle"

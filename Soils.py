@@ -516,24 +516,24 @@ class Soil(object):
 
 def get_soil_type_from_coords(latitude, longitude):
     """
-    Grabs soil type from ADA API given lat, long
-    :param latitude:
-    :param longitude:
-    :return:
+    Grabs soil type from ADA API given latitude and longitude
+    :param latitude: Latitude coordinate
+    :param longitude: Longitude coordinate
+    :return: Dominant soil type (e.g., 'Loam', 'Clay Loam', 'Sandy Loam')
     """
-    print('Getting soil type')
-
     point_wkt = f"POINT({longitude} {latitude})"
     # SQL query to get soil texture information
     query = f"""
-    SELECT mu.muname, c.localphase
+    SELECT mu.muname, c.localphase, ctg.texdesc, ch.hzname
     FROM mapunit AS mu
     JOIN component AS c ON c.mukey = mu.mukey
     JOIN chorizon AS ch ON ch.cokey = c.cokey
+    JOIN chtexturegrp AS ctg ON ctg.chkey = ch.chkey
     WHERE mu.mukey IN (
             SELECT DISTINCT mukey
             FROM SDA_Get_Mukey_from_intersection_with_WktWgs84('{point_wkt}')
         )
+    ORDER BY ch.hzdept_r ASC
     """
 
     # SDA request payload
@@ -546,8 +546,7 @@ def get_soil_type_from_coords(latitude, longitude):
     headers = {'Content-Type': 'application/json'}
     response = requests.post(sda_url, json=request_payload, headers=headers)
 
-    # soil types intentionally formatted, longest to shortest length
-    # so when we check if soil_type in response_string
+    # Soil types ordered from most specific to least specific
     soil_types = ['Silty Clay Loam', 'Sandy Clay Loam',
                   'Sandy Clay', 'Silt Loam', 'Clay Loam',
                   'Silty Clay', 'Loamy Sand', 'Sandy Loam',
@@ -555,36 +554,37 @@ def get_soil_type_from_coords(latitude, longitude):
 
     if response.status_code == 200:
         data = response.json()
-        if "Table" in data:
-            # the row in the json containing soil texture information
-            if data["Table"][2]:
-                texture_line = data["Table"][2][0]
-                lowercase_second_texture = None
-                if data["Table"][2][1]:
-                    second_texture_descrip = data["Table"][2][1] #local phase is a backuup soil description
-                    lowercase_second_texture = second_texture_descrip.lower()
+        if "Table" in data and len(data["Table"]) > 2:
 
-                lowercase_texture = texture_line.lower()
+            # Step 1: Check muname and localphase first
+            for row in data["Table"][2:]:
+                muname = str(row[0]).lower()
+                localphase = str(row[1]).lower()
 
-                matched_soil_type = None
-
-                # Iterate through the list of soil types and check for a match
                 for soil_type in soil_types:
-                    if soil_type.lower() in lowercase_texture:
-                        matched_soil_type = soil_type
-                        print(f'Found soil type: {lowercase_texture}')
-                        break
-                    elif lowercase_second_texture:  # if localphase exists
-                        if soil_type.lower() in lowercase_second_texture:
-                            matched_soil_type = soil_type
-                            print(f'Found soil type: {lowercase_second_texture}')
-                            break
+                    if soil_type.lower() in muname or soil_type.lower() in localphase:
+                        print(f'\t\t\t\tSoil Match: {soil_type}')
+                        return soil_type, False
 
-                return matched_soil_type
+            # Step 2: Fallback to texdesc but only if hzname is "Ap"
+            for row in data["Table"][2:]:
+                texdesc = str(row[2]).lower()
+                hzname = str(row[3]).lower()
+
+                # Only consider texture description if horizon name is "Ap"
+                if "ap" in hzname:
+                    for soil_type in soil_types:
+                        if soil_type.lower() in texdesc:
+                            print(f'\t\t\t\tFallback Match (texdesc with Ap horizon): {soil_type}')
+                            return soil_type, True
+
+            print("\t\t\t\tNo soil type found based on the given attributes.")
         else:
-            print("No soil information found for the given coordinates.")
+            print("\t\t\t\tNo soil information found for the given coordinates.")
     else:
         print(f"Error: {response.status_code}, {response.text}")
+
+    return None, False
 
 def get_soil_types_from_area(polygon_coords):
     """
