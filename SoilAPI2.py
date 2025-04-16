@@ -111,13 +111,13 @@ def coords_to_wkt(coords):
 
 
 # S&S field
-polygon_wkt = "POLYGON((-121.420000 36.850000, -121.410000 36.850000, -121.410000 36.860000, -121.420000 36.860000, -121.420000 36.850000))"
-
-# Get soil data
-soil_data = get_soil_data(polygon_wkt)
-
-# Visualize the soil data
-if soil_data:
-    visualize_soil_data(soil_data)
-else:
-    print("No soil data found")
+# polygon_wkt = "POLYGON((-121.420000 36.850000, -121.410000 36.850000, -121.410000 36.860000, -121.420000 36.860000, -121.420000 36.850000))"
+#
+# # Get soil data
+# soil_data = get_soil_data(polygon_wkt)
+#
+# # Visualize the soil data
+# if soil_data:
+#     visualize_soil_data(soil_data)
+# else:
+#     print("No soil data found")

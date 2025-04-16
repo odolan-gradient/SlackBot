@@ -114,7 +114,7 @@ def get_all_sheet_names(service, spreadsheet_id):
 def billing_report_new_tab(growers):
     '''
     Creates a new sheet tab for the current month, excluding fields that have already been added in previous tabs.
-    :param growers: A list of grower names
+    :param growers: A list of grower objects
     :return: True if successful, False otherwise
     '''
     spreadsheet_id = '137KpyvSKY_LCqiups4EAcwMQPYHV_a55bjwRQAMEX_k'

@@ -3,23 +3,25 @@ from calendar import month_name
 from collections import defaultdict, OrderedDict
 from datetime import timedelta, datetime
 
-import googleapiclient
-import matplotlib.pyplot as plt
+import pandas as pd
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from googleapiclient.http import MediaFileUpload
 
 import Decagon
 import GSheetCredentialSevice
+import ReportCharts
 import SQLScripts
 import Soils
-import gSheetReader
+from GoogleDocsAPI import upload_image_to_drive, insert_into_table_row, insert_image_into_table_cell, header_with_image, \
+    append_to_header_center_aligned, make_copy_doc
+from gSheetReader import getServiceRead, getColumnHeader
 
 # Scopes for Google Drive and Docs APIs
 SCOPES = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/documents']
+SHEET_ID = "1X07t-2B8PU4o-PDSNV0jVdiG4eHjqnAnQ1ROOjVm1y4"
 
 
 def get_credentials():
@@ -29,29 +31,24 @@ def get_credentials():
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+                print("Credentials refreshed successfully.")
+            except Exception as e:
+                print(f"Error refreshing credentials: {e}")
         else:
-            flow = InstalledAppFlow.from_client_secrets_file('google-docs-creds.json', SCOPES)
-            creds = flow.run_local_server(port=8080)
+            print("Starting reauthentication flow...")
+            flow = InstalledAppFlow.from_client_secrets_file(
+                'google-docs-creds.json', SCOPES
+            )
+            creds = flow.run_local_server(port=8080, access_type='offline', prompt='consent')
 
         # Save the credentials for the next run
         with open('token.json', 'w') as token:
             token.write(creds.to_json())
+            print("Saved new credentials to token.json")
 
     return creds
-
-
-def get_t_star_sheet():
-    g_sheet = GSheetCredentialSevice.GSheetCredentialSevice()
-    service = g_sheet.getService()
-    range_name = 'Sheet1'
-    sheet_id = '1X07t-2B8PU4o-PDSNV0jVdiG4eHjqnAnQ1ROOjVm1y4'
-    result = gSheetReader.getServiceRead(range_name, sheet_id, service)
-    row_result = result['valueRanges'][0]['values']
-
-    for index, row in enumerate(row_result):
-        if index == 0:
-            continue
 
 
 def get_vwc_data(table_results):
@@ -140,7 +137,46 @@ def find_psi_range_description(psi):
         return 'Above 2.2 PSI (Critical)'
 
 
-def get_total_column(table_results, column):
+def get_loggers_total_per_day(table_results, column):
+    """
+    Adds the loggers' values for a day and places that value into a new list.
+    For example, if on May 22, two loggers had irr hours of 5.0 and 6.0, the new list would hold 11.0 for May 22.
+
+    :param table_results: A dictionary where the key is the logger identifier, and the value is a dictionary containing lists for 'date' and the specified column.
+    :param column: The specific column to sum the values for (e.g., 'daily_hours').
+    :return: A dictionary where the key is the date and the value is the total summed value for that day across all loggers.
+    """
+    summed_values_per_day = {}
+
+    # Iterate through each logger in the results
+    for logger in table_results:
+        # Get the list of values and the corresponding dates
+        values = table_results[logger][column]
+        dates = table_results[logger]['date']
+
+        # Ensure that both lists have the same length
+        if len(values) != len(dates):
+            raise ValueError(f"Mismatch in length between values and dates for logger {logger}")
+
+        # Loop through each date and value, summing the values for each date
+        for i in range(len(dates)):
+            date = dates[i]
+            value = values[i]
+
+            # Skip None values
+            if value is None:
+                continue
+
+            # Sum values for the same date
+            if date in summed_values_per_day:
+                summed_values_per_day[date] += value
+            else:
+                summed_values_per_day[date] = value
+
+    return summed_values_per_day
+
+
+def get_total_sum_column(table_results, column):
     """
     Gets the total summed amount of a columns data points
     :param table_results:
@@ -150,10 +186,57 @@ def get_total_column(table_results, column):
     total_value = 0
     for logger in table_results:
         values = table_results[logger][column]
-        for value in values:
-            if value is not None:
-                total_value += value
+        filtered_vals = [x for x in values if x is not None]
+        if filtered_vals:
+            total_value += sum(filtered_vals)
     return total_value
+
+
+def get_column_averaged(table_results, column):
+    """
+    Gets the total summed amount of a columns data points
+    :param table_results:
+    :param column:
+    :return:
+    """
+    total_value = 0
+    for logger in table_results:
+        values = table_results[logger][column]
+        filtered_vals = [x for x in values if x is not None]
+        if filtered_vals:
+            total_value += sum(filtered_vals)
+    return total_value / len(table_results)
+
+
+def get_et_hours(table_results, column='et_hours'):
+    """
+    Gets the total summed amount of a columns data points
+    :param table_results:
+    :param column:
+    :return:
+    """
+    total_value = 0
+    for logger in table_results:
+        values = table_results[logger][column]
+        filtered_vals = [x for x in values if x is not None]
+        if filtered_vals:
+            total_value += sum(filtered_vals)
+            break
+    return total_value
+
+
+def get_each_logger_column(table_results, column):
+    """
+    :param table_results:
+    :param column:
+    :return:
+    """
+    loggers = {}
+    for logger in table_results:
+        values = table_results[logger][column]
+        filtered_vals = [x for x in values if x is not None]
+        loggers[logger] = filtered_vals
+    return loggers
 
 
 def get_psi_values(table_results):
@@ -161,6 +244,7 @@ def get_psi_values(table_results):
     This function takes in a dictionary of loggers, calculates the average psi values at each index,
     and handles cases where psi values are None by excluding them from the average calculation.
     The function returns a list of averaged psi values, excluding indices with no valid data.
+    :return: list
     """
 
     column = 'psi'
@@ -168,12 +252,12 @@ def get_psi_values(table_results):
     if num_loggers < 1:
         raise ValueError("There should be at least one logger in the table_results.")
 
-    # Initialize the combined_psi list with zeros
-    first_logger = list(table_results.keys())[0]
-    combined_psi = [0] * len(table_results[first_logger][column])
+    # Find the maximum length of the psi column across all loggers
+    max_length = max(len(table_results[logger][column]) for logger in table_results)
 
-    # A list to count how many valid psi values (non-None) exist at each index/each logger
-    count_non_none = [0] * len(table_results[first_logger][column])
+    # Initialize the combined_psi and count_non_none lists with zeros
+    combined_psi = [0] * max_length
+    count_non_none = [0] * max_length
 
     # Iterate over all loggers and sum their psi values, disregarding None values
     for logger in table_results:
@@ -181,25 +265,47 @@ def get_psi_values(table_results):
         for i, psi in enumerate(psi_values):
             if psi is not None:
                 combined_psi[i] += psi
-                count_non_none[i] += 1  # Increment the count for non-None values
+                count_non_none[i] += 1
 
     # Calculate the average by dividing the summed psi values by the count of non-None values
     averaged_psi = []
-    for i in range(len(combined_psi)):
+    for i in range(max_length):
         if count_non_none[i] > 0:  # No nones
             averaged_psi.append(combined_psi[i] / count_non_none[i])
 
     return averaged_psi
 
 
-def get_average_value(table_results, column):
+def get_daily_average_value(table_results, column):
+    """
+    Averages the values by the amount of days then averages the two loggers average
+    :param table_results:
+    :param column:
+    :return:
+    """
     average = 0
     for logger in table_results:
         value = table_results[logger][column]
         filtered_vals = [x for x in value if x is not None]
         if filtered_vals:
-            average += sum(filtered_vals) / len(filtered_vals)  # Add both loggers averge psi
-    return average / 2  # Average the average
+            average += sum(filtered_vals) / len(filtered_vals)  # Average each day
+    return average / len(table_results)  # Average the sum of each average
+
+
+def get_loggers_averaged(table_results, column):
+    """
+    Adds the sum of each loggers values for the season and averages them instead of averaging per day
+    :param table_results:
+    :param column:
+    :return: num
+    """
+    average = 0
+    for logger in table_results:
+        value = table_results[logger][column]
+        filtered_vals = [x for x in value if x is not None]
+        if filtered_vals:
+            average += sum(filtered_vals)
+    return average / len(table_results)  # Average the sum of each total value
 
 
 def get_average_time(table_results):
@@ -243,6 +349,7 @@ def get_monthly_column(table_results, column, average=False):
     :return: An ordered dictionary of months and their corresponding total or average values.
     """
     column_date = 'date'
+    current_year = datetime.now().year  # Get the current year
 
     # Initialize a defaultdict for storing monthly sums and counts
     monthly_values = defaultdict(float)
@@ -252,12 +359,12 @@ def get_monthly_column(table_results, column, average=False):
         logger_hours = table_results[logger][column]
         logger_dates = table_results[logger][column_date]
 
-        for date, hours in zip(logger_dates, logger_hours):
-            if hours is not None:  # Skip None values
+        for date, inches in zip(logger_dates, logger_hours):
+            if inches is not None and date.year == current_year:  # Filter for the current year
                 # Parse the date and extract the month name
                 month = date.strftime('%B')
                 # Sum hours for each month or accumulate values for averaging
-                monthly_values[month] += hours
+                monthly_values[month] += inches
                 monthly_counts[month] += 1
 
     # Prepare the final ordered dictionary
@@ -272,6 +379,56 @@ def get_monthly_column(table_results, column, average=False):
                 ordered_months[month] = monthly_values[month]
 
     return ordered_months
+
+
+def get_monthly_column_loggers(table_results, column, average=False):
+    """
+    Gets and either adds up or averages a column's daily data, grouping it by month, and returns
+    a nested dictionary where each logger is a key.
+
+    :param table_results: The table results containing 'daily_hours', 'vpd', and 'date'.
+    :param column: The column to process (e.g., 'daily_hours').
+    :param average: Boolean flag to determine if the values should be averaged instead of summed.
+    :return: A nested dictionary with each logger as a key and each month as a nested key,
+             containing either the total or average value.
+    """
+    column_date = 'date'
+    current_year = datetime.now().year
+
+    # Initialize the main dictionary to hold logger data
+    results = {}
+
+    for logger in table_results:
+        logger_hours = table_results[logger][column]
+        logger_dates = table_results[logger][column_date]
+
+        # Initialize dictionaries for monthly sums and counts for this logger
+        monthly_values = defaultdict(float)
+        monthly_counts = defaultdict(int)
+
+        for date, inches in zip(logger_dates, logger_hours):
+            if inches is not None and date.year == current_year:  # Filter for the current year
+                # Parse the date and extract the month name
+                month = date.strftime('%B')
+                # Sum or accumulate values for averaging
+                monthly_values[month] += inches
+                monthly_counts[month] += 1
+
+        # Prepare the final ordered dictionary for this logger
+        ordered_months = OrderedDict()
+        for month in month_name[1:]:  # Skip the first item which is an empty string
+            if month in monthly_values:
+                if average and monthly_counts[month] > 0:
+                    # Calculate the average
+                    ordered_months[month] = monthly_values[month] / monthly_counts[month]
+                else:
+                    # Use the sum
+                    ordered_months[month] = monthly_values[month]
+
+        # Add this logger's monthly data to the main results dictionary
+        results[logger] = ordered_months
+
+    return results
 
 
 def get_max_column(table_results, column):
@@ -309,7 +466,7 @@ def get_max_column_with_date_and_time(table_results, column):
         times = table_results[logger]['time']
 
         for t, d, time in zip(temp, dates, times):
-            if t > max_temp:
+            if t is not None and t > max_temp:
                 max_temp = t
                 max_temp_date = d
                 max_temp_time = time
@@ -340,17 +497,22 @@ def get_column_value_on_date(table_results, target_date, column):
 
 
 def get_start_end_dates(table_results):
-    start_date = datetime(2222, 1, 1, 0, 0, 0)
-    start_date = start_date.date()
-    end_date = datetime(1999, 1, 1, 0, 0, 0)
-    end_date = end_date.date()
+    start_date = datetime(2222, 1, 1).date()
+    end_date = datetime(1999, 1, 1).date()
+
     for logger in table_results:
-        new_start_date = min(table_results[logger]['date'])
-        if new_start_date < start_date:
-            start_date = new_start_date
-        new_end_date = max(table_results[logger]['date'])
-        if new_end_date > end_date:
-            end_date = new_end_date
+        # Filter out None values before calling min and max
+        valid_dates = [date for date in table_results[logger]['date'] if date is not None]
+
+        if valid_dates:
+            new_start_date = min(valid_dates)
+            if new_start_date < start_date:
+                start_date = new_start_date
+
+            new_end_date = max(valid_dates)
+            if new_end_date > end_date:
+                end_date = new_end_date
+
     return start_date, end_date
 
 
@@ -369,835 +531,337 @@ def days_above_100(table_results):
     return days_over
 
 
-def create_pie_chart(data_dict):
-    # Filter out zero values
-    labels = [label for label, size in data_dict.items() if size > 0]
-    sizes = [size for size in data_dict.values() if size > 0]
-
-    # Manually define a color gradient from green to red
-    colors = [
-        '#008000',  # Green
-        '#66b266',  # Light Green
-        '#cccc66',  # Yellowish Green
-        '#ffcc66',  # Light Orange
-        '#ff6666',  # Light Red
-        '#ff0000',  # Red
-        '#990000'  # Dark Red
-    ]
-
-    # Adjust the number of colors to match the number of labels
-    colors = colors[:len(labels)]
-
-    # Create the pie chart without labels
-    wedges, texts, autotexts = plt.pie(sizes, colors=colors, autopct='%1.1f%%', startangle=90)
-
-    # Add a legend
-    plt.legend(wedges, labels, title="Categories", loc="center left", bbox_to_anchor=(1, 0, 0.5, 1))
-
-    plt.axis('equal')  # Makes the pie chart a circle
-    plt.title('Soil Moisture Distribution')
-
-    # Save the chart as an image file
-    image_path = 'pie_chart.png'
-    plt.savefig(image_path, dpi=300, bbox_inches='tight')
-    plt.close()
-
-    return image_path
-
-
-def create_bar_graph(month_data, title):
+def create_or_use_folder_and_move_document(docs_service, document_id, folder_name):
     """
-    Creates a bar graph using Matplotlib with the given month data and title.
-    Values are displayed inside the bars, and x-axis labels are removed.
+    Creates a folder in the same parent folder as the specified document, or uses an existing folder,
+    and moves the specified document into this folder.
 
-    :param month_data: Dictionary where keys are month names and values are numbers.
-    :param title: Title for the bar graph.
-    """
-    # Extract months and numbers from the dictionary
-    months = list(month_data.keys())
-    values = list(month_data.values())
+    Parameters:
+    document_id (str): The ID of the document to find its parent folder and move it to the new/existing folder.
+    folder_name (str): The name of the folder to create or use if it already exists.
 
-    # Create the bar graph
-    plt.figure(figsize=(10, 6))
-    bars = plt.bar(months, values, color='skyblue')
-
-    # Add title and labels
-    plt.title(title, fontsize=16)
-    plt.ylabel('Values', fontsize=14)
-
-    # Remove x-axis labels
-    plt.xticks([])
-
-    # Add gridlines for better readability
-    plt.grid(axis='y', linestyle='--', alpha=0.7)
-
-    # Add value labels inside the bars
-    for bar in bars:
-        height = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width() / 2., height / 2,
-                 f'{height:.0f}',
-                 ha='center', va='center', fontweight='bold')
-
-    # Adjust layout to prevent clipping of labels
-    plt.tight_layout()
-
-    # Save the chart as an image file
-    image_path = 'bar_chart.png'
-    plt.savefig(image_path, dpi=300, bbox_inches='tight')
-    plt.close()
-
-    return image_path
-
-
-def create_combined_bar_line_graph(bar_values, line_values, bar_label, line_label, title):
-    """
-    Creates a combined bar and line graph with dual y-axes.
-
-    :param bar_values: List of values for the bar chart.
-    :param line_values: List of values for the line chart.
-    :param bar_label: Label for the bar chart data (y-axis label).
-    :param line_label: Label for the line chart data (y-axis label).
-    :param title: Title of the graph.
+    Returns:
+    str: The ID of the created or existing folder.
     """
 
-    # Convert OrderedDicts to lists if necessary
-    if isinstance(bar_values, OrderedDict):
-        bar_values = list(bar_values.values())
-    if isinstance(line_values, OrderedDict):
-        line_values = list(line_values.values())
-
-    # Set up the figure and axis with larger size
-    fig, ax1 = plt.subplots(figsize=(12, 6))
-
-    # Create the bar chart on ax1
-    ax1.bar(range(len(bar_values)), bar_values, color='b', alpha=0.6)
-    ax1.set_xlabel('Data Points')
-    ax1.set_ylabel(bar_label, color='b')
-    ax1.tick_params(axis='y', labelcolor='b')
-
-    # Add gridlines for better readability
-    ax1.grid(True, which='both', linestyle='--', linewidth=0.5)
-
-    # Create a secondary y-axis for the line chart
-    ax2 = ax1.twinx()
-    ax2.plot(range(len(line_values)), line_values, color='y', marker='o', markersize=5)
-    ax2.set_ylabel(line_label, color='y')
-    ax2.tick_params(axis='y', labelcolor='y')
-
-    # Remove the x-axis labels to reduce clutter
-    ax1.set_xticks([])
-
-    # Add a title
-    plt.title(title)
-
-    # Save the chart as an image file
-    image_path = 'bar_chart.png'
-    plt.savefig(image_path, dpi=300, bbox_inches='tight')
-    plt.close()
-
-    return image_path
-
-
-def create_psi_bucket_graph_with_percentages(psi_values):
-    # Define the PSI ranges and corresponding labels
-    psi_ranges = [0, 0.5, 1.0, 1.6, 2.2, 3]
-    labels = [
-        '0.0 PSI',
-        '0.5 PSI',
-        '1.0 PSI',
-        '1.6 PSI (Threshold)',
-        '2.2 PSI (Critical)',
-        'Above Critical PSI'
-    ]
-
-    # Define colors for the ranges from green to red
-    colors = ['#008000', '#66b266', '#cccc66', '#ff6666', '#ff0000']
-
-    # Map the actual PSI ranges to evenly spaced values
-    num_ranges = len(psi_ranges) - 1
-    evenly_spaced_y = list(range(num_ranges + 1))
-
-    # Classify the PSI values into the correct ranges
-    counts = [0] * num_ranges
-    for psi in psi_values:
-        for i in range(num_ranges):
-            if psi_ranges[i] <= psi < psi_ranges[i + 1]:
-                counts[i] += 1
-                break
-
-    # Calculate percentages for each range
-    percentages = [count / len(psi_values) * 100 for count in counts]
-
-    # Create a figure and axis
-    fig, ax = plt.subplots(figsize=(6, 8))
-
-    # Draw horizontal lines for each evenly spaced range
-    for i in range(1, len(evenly_spaced_y)):
-        ax.hlines(y=evenly_spaced_y[i], xmin=0, xmax=1, color=colors[i - 1], linewidth=5, label=labels[i - 1])
-
-    # Draw the "bucket" (vertical bar)
-    for i in range(num_ranges):
-        ax.barh(y=evenly_spaced_y[i], width=1, height=1,
-                color=colors[i], edgecolor='black', align='edge', alpha=0.3)
-
-    # Display the percentage text inside each section
-    for i in range(num_ranges):
-        ax.text(0.5, evenly_spaced_y[i] + 0.5, f'{percentages[i]:.1f}%',
-                ha='center', va='center', fontsize=12, color='black', weight='bold')
-
-    # Set the y-axis limits to fit the evenly spaced values
-    ax.set_ylim(0, num_ranges)
-
-    # Set the y-axis labels and ticks
-    ax.set_yticks(evenly_spaced_y)
-    ax.set_yticklabels(labels)
-
-    # Set x-axis labels and remove ticks
-    ax.set_xticks([])
-    ax.set_xlabel('PSI Level')
-
-    ax.set_title('PSI Bucket Visualization')
-
-    # Add a legend
-    ax.legend(loc='upper left', bbox_to_anchor=(1, 1), title='PSI Ranges')
-
-    plt.tight_layout()
-
-    # Save the chart as an image file
-    image_path = 'bar_percent.png'
-    plt.savefig(image_path, dpi=300, bbox_inches='tight')
-    plt.close()
-    return image_path
-
-
-def create_vwc_bucket_chart(data_dict, value_ranges):
-
-    if len(value_ranges) != 2 * len(data_dict):
-        raise ValueError("Length of value_ranges must be double the length of data_dict labels")
-
-    labels = list(data_dict.keys())
-    colors = ['#D32F2F', '#FF8F00', '#FFCC00', '#388E3C', '#FF8F00', '#D32F2F']
-
-    value_ranges, labels, data_dict, colors = remove_duplicate_range_pairs(value_ranges, labels, data_dict, colors)
-
-    total = sum(data_dict.values())
-    percentages = [(value / total) * 100 if total > 0 else 0 for value in data_dict.values()]
-
-    fig, ax = plt.subplots(figsize=(6, 8))
-
-    # Draw each bar
-    for i in range(len(labels)):
-        lower_bound = value_ranges[2 * i]  # Start of the range
-        upper_bound = value_ranges[2 * i + 1]  # End of the range
-        height = upper_bound - lower_bound
-
-        y_position = lower_bound  # Position based on lower bound
-
-        # Draw the bars with the correct height
-        ax.barh(y=y_position, width=1, height=height,
-                color=colors[i], edgecolor='black', align='edge', alpha=0.3, label=labels[i])
-
-        # Add the percentage text inside each bar
-        ax.text(0.5, y_position + height / 2, f'{percentages[i]:.1f}%',
-                ha='center', va='center', fontsize=12, color='black', weight='bold')
-
-    # Adjust y-axis limits to match the exact range of the data
-    ax.set_ylim(min(value_ranges), max(value_ranges))
-
-    # Set the y-axis labels and ticks to align with the ranges
-    ax.set_yticks([(value_ranges[2 * i] + value_ranges[2 * i + 1]) / 2 for i in range(len(labels))])
-    ax.set_yticklabels(labels)
-
-    # Set x-axis labels and remove ticks
-    ax.set_xticks([])
-    ax.set_xlabel('PSI Level')
-
-    ax.set_title('Soil Moisture Distribution with Percentages')
-
-    # Create custom legend with the colors
-    handles = [plt.Rectangle((0, 0), 1, 1, color=colors[i], ec="black") for i in range(len(labels))]
-    ax.legend(handles, labels, loc='upper left', bbox_to_anchor=(1, 1), title='Moisture Levels')
-
-    plt.tight_layout()
-    image_path = 'bucket_percent.png'
-    plt.savefig(image_path, dpi=300, bbox_inches='tight')
-    plt.close()
-    return image_path
-
-
-def remove_duplicate_range_pairs(value_ranges, labels, data_dict, colors):
-    """
-    This function removes duplicate range pairs and their associated labels, data, and colors
-    from the provided lists and dictionary.
-
-    :param value_ranges: A list of numeric ranges in pairs (e.g., [0, 25, 25, 29, ...]).
-    :param labels: A list of labels corresponding to the ranges.
-    :param data_dict: A dictionary with labels as keys and corresponding data as values.
-    :param colors: A list of colors corresponding to each label.
-    :return: Updated value_ranges, labels, data_dict, and colors with duplicates removed.
-    """
-    # Iterate over the range pairs
-    i = 0
-    while i < len(value_ranges) - 1:
-        lower_bound = value_ranges[i]
-        upper_bound = value_ranges[i + 1]
-
-        # Check if the pair is a duplicate (both values are the same)
-        if lower_bound == upper_bound:
-            # Remove the range pair from value_ranges
-            value_ranges = value_ranges[:i] + value_ranges[i + 2:]
-
-            # Remove the corresponding label, data, and color
-            label_to_remove = labels.pop(i // 2)
-            del data_dict[label_to_remove]
-            colors.pop(i // 2)
-
-            # No need to increment i because the list has shrunk
-        else:
-            # Move to the next range pair
-            i += 2
-
-    return value_ranges, labels, data_dict, colors
-
-
-def upload_image_to_drive(image_path, drive_service):
-    file_metadata = {'name': os.path.basename(image_path)}
-    media = MediaFileUpload(image_path, mimetype='image/png')
-    file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-    file_id = file.get('id')
-
-    # Set the file to be publicly accessible
-    permission = {
-        'type': 'anyone',
-        'role': 'reader',
-    }
-    drive_service.permissions().create(fileId=file_id, body=permission).execute()
-
-    return file_id
-
-
-def get_end_index(docs_service, document_id):
-    """
-    Retrieves the end index of the document to ensure content is added at the correct position.
-    """
-    document = docs_service.documents().get(documentId=document_id).execute()
-    return document['body']['content'][-1]['endIndex']
-
-
-def insert_image_into_doc(docs_service, document_id, file_id):
-    image_url = f'https://drive.google.com/uc?id={file_id}'
-    end_index = get_end_index(docs_service, document_id)
-    requests = [
-        {
-            'insertInlineImage': {
-                'location': {'index': end_index - 1},  # Insert at the end of the document
-                'uri': image_url,
-                'objectSize': {
-                    'height': {'magnitude': 350, 'unit': 'PT'},
-                    'width': {'magnitude': 350, 'unit': 'PT'}
-                }
-            }
-        }
-    ]
-    docs_service.documents().batchUpdate(documentId=document_id, body={'requests': requests}).execute()
-
-
-def insert_text_into_doc(docs_service, document_id, header, body):
-    end_index = get_end_index(docs_service, document_id)
-    requests = [
-        {
-            'insertText': {
-                'location': {'index': end_index - 1},
-                'text': f"{header}\n\n"
-            }
-        },
-        {
-            'updateParagraphStyle': {
-                'range': {
-                    'startIndex': end_index - 1,
-                    'endIndex': end_index - 1 + len(header) + 1
-                },
-                'paragraphStyle': {
-                    'namedStyleType': 'HEADING_3'
-                },
-                'fields': 'namedStyleType'
-            }
-        },
-        {
-            'insertText': {
-                'location': {'index': end_index - 1 + len(header) + 2},
-                'text': f"{body}\n\n"
-            }
-        }
-    ]
-    docs_service.documents().batchUpdate(documentId=document_id, body={'requests': requests}).execute()
-
-
-def insert_three_columns(docs_service, document_id, headers, bodies, title):
-    """
-
-    :param docs_service: The Google Docs API service object.
-    :param document_id: The ID of the Google Doc.
-    :param headers: A list of three header strings.
-    :param bodies: A list of three body strings or values corresponding to the headers.
-    """
-    # Ensure headers and bodies each have three elements
-    if len(headers) != 3 or len(bodies) != 3:
-        raise ValueError("Headers and bodies must each contain exactly three elements.")
-
-    bodies = [str(body) for body in bodies]
-    print(get_end_index(docs_service, document_id))
-    index = get_end_index(docs_service, document_id) - 1
-    requests = [
-
-        {
-            "insertTable":
-                {
-                    "rows": 2,
-                    "columns": 3,
-                    "location":
-                        {
-                            "index": index
-                        }
-                }
-        },
-        {
-            "insertText":
-                {
-                    "text": bodies[2],
-                    "location":
-                        {
-                            "index": index + 15  # 16
-                        }
-                }
-        },
-        {
-            "insertText":
-                {
-                    "text": bodies[1],
-                    "location":
-                        {
-                            "index": index + 13  # 14  # Each table cell is 2 away from the other?
-                        }
-                }
-        },
-        {
-            "insertText":
-                {
-                    "text": bodies[0],
-                    "location":
-                        {
-                            "index": index + 11  # 12
-                        }
-                }
-        },  # START HEADERS
-        {
-            "insertText":
-                {
-                    "text": headers[2],
-                    "location":
-                        {
-                            "index": index + 8  # 9
-                        }
-                }
-        },
-        {
-            "insertText":
-                {
-                    "text": headers[1],
-                    "location":
-                        {
-                            "index": index + 6  # 7
-                        }
-                }
-        },
-        {
-            "insertText":
-                {
-                    "text": headers[0],
-                    "location":
-                        {
-                            "index": index + 4  # 5
-                        }
-                }
-        },
-        # Insert the title
-        {
-            "insertText": {
-                "text": title,
-                "location": {
-                    "index": index
-                }
-            }
-        },
-    ]
-
-    # Execute the batchUpdate request to insert the text into the table
-    docs_service.documents().batchUpdate(documentId=document_id, body={'requests': requests}).execute()
-    print(get_end_index(docs_service, document_id))
-
-
-def insert_into_second_row(docs_service, document_id, bodies, table_index=0):
-    """
-    Inserts values into the second row of a specified table in a Google Doc.
-
-    :param docs_service: The Google Docs API service object.
-    :param document_id: The ID of the Google Doc.
-    :param bodies: A list of strings or values to insert into the table's second row.
-    :param table_index: The index of the target table (0-based). Default is 0 (first table).
-    """
-    document = docs_service.documents().get(documentId=document_id).execute()
-
-    # Find all tables in the document
-    tables = [element for element in document['body']['content'] if 'table' in element]
-
-    if not tables:
-        raise ValueError("No tables found in the document.")
-
-    if table_index >= len(tables):
-        raise ValueError(
-            f"Table index {table_index} is out of range. There are only {len(tables)} tables in the document.")
-
-    table_element = tables[table_index]
-    table_rows = table_element['table']['tableRows']
-
-    if len(table_rows) < 2:
-        raise ValueError(f"The table at index {table_index} does not have a second row.")
-
-    second_row_cells = table_rows[1]['tableCells']
-
-    if len(bodies) > len(second_row_cells):
-        raise ValueError(
-            f"Too many values to insert. The second row has {len(second_row_cells)} cells, but trying to insert {len(bodies)} values.")
-
-    requests = []
-    offset = 0  # Keep track of the cumulative offset due to insertions
-
-    for i, body in enumerate(bodies):
-        cell = second_row_cells[i]
-
-        if not cell.get('content'):
-            # If the cell is empty, create a new paragraph
-            requests.append({
-                'insertText': {
-                    'location': {'index': cell['startIndex'] + offset},
-                    'text': '\n'
-                }
-            })
-            insert_index = cell['startIndex'] + offset + 1
-            offset += 1  # Account for the newline character
-        else:
-            # Find the last paragraph in the cell
-            last_paragraph = next(reversed([e for e in cell['content'] if 'paragraph' in e]), None)
-            if last_paragraph:
-                insert_index = last_paragraph['endIndex'] - 1 + offset
-            else:
-                insert_index = cell['startIndex'] + offset
-
-        body_str = str(body)
-        requests.append({
-            'insertText': {
-                'location': {'index': insert_index},
-                'text': body_str
-            }
-        })
-        offset += len(body_str)  # Increase the offset by the length of the inserted text
-
-    try:
-        result = docs_service.documents().batchUpdate(documentId=document_id, body={'requests': requests}).execute()
-        print(f"Inserted {len(bodies)} values into the second row of table {table_index + 1}.")
-        return result
-    except googleapiclient.errors.HttpError as error:
-        print(f"An error occurred: {error}")
-        print(f"Error details: {error.content}")
-        raise
-
-
-def insert_image_into_table_cell(docs_service, document_id, file_id, table_index=0, row_index=0, cell_index=0):
-    """
-    Insert an image from Google Drive into a specific cell of a table in a Google Document.
-
-    :param docs_service: The Google Docs API service object.
-    :param document_id: The ID of the Google Doc.
-    :param file_id: The ID of the image file in Google Drive.
-    :param table_index: The index of the target table (0-based).
-    :param row_index: The index of the target row (0-based).
-    :param cell_index: The index of the target cell (0-based).
-    """
-    # Get the current document structure
-    document = docs_service.documents().get(documentId=document_id).execute()
-
-    # Find the specified table
-    tables = [element for element in document['body']['content'] if 'table' in element]
-    if not tables or table_index >= len(tables):
-        raise ValueError("No tables found or table index out of range.")
-
-    table_element = tables[table_index]
-    table_rows = table_element['table']['tableRows']
-    if row_index >= len(table_rows):
-        raise ValueError("Row index out of range.")
-
-    target_row_cells = table_rows[row_index]['tableCells']
-    if cell_index >= len(target_row_cells):
-        raise ValueError("Cell index out of range.")
-
-    target_cell = target_row_cells[cell_index]
-
-    # Ensure there's content in the cell
-    if not target_cell['content']:
-        # If the cell is empty, insert a paragraph first
-        requests = [
-            {
-                'insertText': {
-                    'location': {
-                        'index': target_cell['startIndex']
-                    },
-                    'text': '\n'
-                }
-            }
-        ]
-        docs_service.documents().batchUpdate(documentId=document_id, body={'requests': requests}).execute()
-        # Refresh the document to get the updated structure
-        document = docs_service.documents().get(documentId=document_id).execute()
-        target_cell = document['body']['content'][table_index]['table']['tableRows'][row_index]['tableCells'][
-            cell_index]
-
-    # Insert the image into the specified cell
-    insert_index = target_cell['content'][0]['startIndex']
-    requests = [
-        {
-            'insertInlineImage': {
-                'location': {
-                    'index': insert_index
-                },
-                'uri': f'https://drive.google.com/uc?id={file_id}',
-                'objectSize': {
-                    'height': {'magnitude': 300, 'unit': 'PT'},
-                    'width': {'magnitude': 285, 'unit': 'PT'}
-                }
-            }
-        }
-    ]
-
-    try:
-        result = docs_service.documents().batchUpdate(documentId=document_id, body={'requests': requests}).execute()
-        print("Image inserted successfully.")
-    except googleapiclient.errors.HttpError as error:
-        print(f"An error occurred: {error}")
-        print(f"Error details: {error.content}")
-
-
-def create_right_aligned_header(docs_service, document_id, header_text):
-    """
-    Creates a header in the Google Doc and writes right-aligned text into it with bold Arial 15 font.
-
-    :param docs_service: The Google Docs API service object.
-    :param document_id: The ID of the Google Doc.
-    :param header_text: The text to insert into the header, aligned to the right.
-    """
-    # Retrieve the document to check if it already has headers
-    doc = docs_service.documents().get(documentId=document_id).execute()
-
-    # If there are no headers, create one
-    if 'headers' not in doc:
-        header_request = {
-            'createHeader': {
-                'type': 'DEFAULT'
-            }
-        }
-        header_response = docs_service.documents().batchUpdate(
-            documentId=document_id,
-            body={'requests': [header_request]}
-        ).execute()
-        header_id = header_response['replies'][0]['createHeader']['headerId']
+    # Get the Drive API service
+    service = docs_service
+
+    # Retrieve the parent folder ID of the document
+    file = service.files().get(fileId=document_id, fields='parents').execute()
+    parent_folder_id = file.get('parents', [None])[0]
+
+    if not parent_folder_id:
+        raise ValueError("The specified document has no parent folder.")
+
+    # Check if a folder with the specified name already exists in the parent folder
+    query = f"'{parent_folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and name='{folder_name}'"
+    result = service.files().list(q=query, fields='files(id, name)').execute()
+    existing_folders = result.get('files', [])
+
+    if existing_folders:
+        # Folder already exists, use its ID
+        folder_id = existing_folders[0]['id']
+        print(f"Folder '{folder_name}' already exists with ID: {folder_id}")
     else:
-        header_id = list(doc['headers'].keys())[0]  # Use the existing header
-
-    # Request to insert text into the header, align it to the right, and format it
-    requests = [
-        {
-            'insertText': {
-                'location': {
-                    'segmentId': header_id,
-                    'index': 0  # Start at the beginning of the header
-                },
-                'text': header_text
-            }
-        },
-        {
-            'updateParagraphStyle': {
-                'range': {
-                    'segmentId': header_id,
-                    'startIndex': 0,
-                    'endIndex': len(header_text)
-                },
-                'paragraphStyle': {
-                    'alignment': 'END'
-                },
-                'fields': 'alignment'
-            }
-        },
-        {
-            'updateTextStyle': {
-                'range': {
-                    'segmentId': header_id,
-                    'startIndex': 0,
-                    'endIndex': len(header_text)
-                },
-                'textStyle': {
-                    'bold': True,
-                    'weightedFontFamily': {
-                        'fontFamily': 'Arial'
-                    },
-                    'fontSize': {
-                        'magnitude': 15,
-                        'unit': 'PT'
-                    }
-                },
-                'fields': 'bold,weightedFontFamily,fontSize'
-            }
+        # Folder does not exist, create a new one
+        folder_metadata = {
+            'name': folder_name,
+            'mimeType': 'application/vnd.google-apps.folder',
+            'parents': [parent_folder_id]
         }
-    ]
+        folder = service.files().create(body=folder_metadata, fields='id').execute()
+        folder_id = folder.get('id')
+        print(f"Folder '{folder_name}' created with ID: {folder_id}")
 
-    # Execute the batchUpdate request to apply the changes
-    docs_service.documents().batchUpdate(documentId=document_id, body={'requests': requests}).execute()
+    # Move the document into the folder
+    try:
+        # Remove the document from its current parent and add it to the new folder
+        service.files().update(
+            fileId=document_id,
+            addParents=folder_id,
+            removeParents=parent_folder_id,
+            fields='id, parents'
+        ).execute()
+        print(f"Document with ID {document_id} moved to folder '{folder_name}' with ID: {folder_id}")
+    except HttpError as error:
+        print(f"An error occurred: {error}")
+        return None
+
+    return folder_id
 
 
-def append_to_header_center_aligned(docs_service, document_id, text_to_append):
+def get_grower_field_row(sheet_id, range_name, grower_name, field, result=None):
     """
-    Appends text to the last index of the existing header, center-aligned, in 19-point Arial Bold font.
+    Gets the row called 'Grower' in a sheet.
 
-    :param docs_service: The Google Docs API service object.
-    :param document_id: The ID of the Google Doc.
-    :param text_to_append: The text to append to the header.
+    :param result:
+    :param sheet_id: The ID of the Google Sheet.
+    :param range_name: The range name (or sheet name) to search in.
+    :param grower_name: The name of the grower to match.
+    :param field: Field object
+    :return: List of rows matching the grower and field criteria.
     """
-    # Get the current content of the header
-    header_content = docs_service.documents().get(documentId=document_id, fields='headers').execute()
 
-    # Check if headers exist
-    if 'headers' not in header_content or not header_content['headers']:
-        print("No headers found in the document.")
-        return
+    # g_sheet = GSheetCredentialSevice.GSheetCredentialSevice()
+    # service = g_sheet.getService()
+    #
+    # # Read Google Sheet
+    # result = getServiceRead(range_name, sheet_id, service)
+    row_result = result['valueRanges'][0]['values']
 
-    header_id = list(header_content['headers'].keys())[0]
+    grower_header = getColumnHeader("Grower", row_result)
+    field_header = getColumnHeader("Grower field #", row_result)
+    our_nickname = getColumnHeader("Our Nickname", row_result)
+    ms_field = getColumnHeader("MS Field - Variety", row_result)
 
-    # Get the length of the current header content
-    insert_index = header_content['headers'][header_id]['content'][-1]['endIndex'] - 1
+    grower_field = []
 
-    # Prepare the requests
-    requests = [
-        # Insert a newline character if the header is not empty
-        {
-            'insertText': {
-                'location': {
-                    'segmentId': header_id,
-                    'index': insert_index
-                },
-                'text': '\n' if insert_index > 0 else ''
-            }
-        },
-        # Insert the new text
-        {
-            'insertText': {
-                'location': {
-                    'segmentId': header_id,
-                    'index': insert_index + (1 if insert_index > 0 else 0)
-                },
-                'text': text_to_append
-            }
-        },
-        # Update the style of the entire inserted text
-        {
-            'updateTextStyle': {
-                'range': {
-                    'segmentId': header_id,
-                    'startIndex': insert_index - 1,  # Start from the newline character
-                    'endIndex': insert_index + len(text_to_append) + (1 if insert_index > 0 else 0)
-                },
-                'textStyle': {
-                    'fontSize': {
-                        'magnitude': 19,
-                        'unit': 'PT'
-                    },
-                    'weightedFontFamily': {
-                        'fontFamily': 'Arial'
-                    },
-                    'bold': True
-                },
-                'fields': 'fontSize,weightedFontFamily,bold'
-            }
-        },
-        # Center-align the paragraph
-        {
-            'updateParagraphStyle': {
-                'range': {
-                    'segmentId': header_id,
-                    'startIndex': insert_index + (1 if insert_index > 0 else 0),
-                    'endIndex': insert_index + len(text_to_append) + (1 if insert_index > 0 else 0)
-                },
-                'paragraphStyle': {
-                    'alignment': 'CENTER'
-                },
-                'fields': 'alignment'
-            }
-        }
-    ]
+    for row_index, row in enumerate(row_result):
+        try:
+            # Ignore header row and empty rows
+            if row_index == 0 or not row[grower_header]:
+                continue
 
-    # Execute the batchUpdate request to apply the changes
-    docs_service.documents().batchUpdate(documentId=document_id, body={'requests': requests}).execute()
-    print(f"Text appended to header: '{text_to_append}'")
+            if grower_name == row[grower_header]:
+                # Check if field.name_ms contains any substring that matches row[ms_field]
+                ms_field_values = row[ms_field].split(",") if row[ms_field] else []
+                name_ms_substrings = field.name_ms.split(",") if field.name_ms else []
+
+                # Strip whitespace from substrings
+                ms_field_values = [value.strip() for value in ms_field_values]
+                name_ms_substrings = [substring.strip() for substring in name_ms_substrings]
+
+                if (
+                        field.nickname == row[our_nickname]
+                        or field.nickname == row[field_header]
+                        or any(substring in row[ms_field] for substring in name_ms_substrings)
+                ):
+                    grower_field.append(row)
+        except IndexError:
+            continue
+        except Exception as err:
+            print(f"Error on row {row_index}: {err}")
+            continue
+
+    return grower_field
 
 
-# Example usage:
-# append_to_header_center_aligned(docs_service, 'your_document_id', 'New Centered Text')
+def get_field_average(sheet_rows):
+    """
+    Calculate the average of specific fields from sheet rows.
 
-def make_copy_doc(drive_service, source_doc_id, name):
-    # Metadata for the new copy
-    file_metadata = {
-        'name': name,
-        'mimeType': 'application/vnd.google-apps.document'
+    :param sheet_rows: A list of rows, where each row is a list of values.
+    :return: A dictionary with the averages of 'net', 'paid', 'green', 'mold', and 'mot'.
+    """
+    net_acre = 0.0
+    net_tons = 0.0
+    paid_acres = 0.0
+    paid_tons = 0.0
+    green = 0.0
+    mold = 0.0
+    mot = 0.0
+    acres = 0.0
+    num_rows = len(sheet_rows)
+
+    for row in sheet_rows:
+        net_acre += float(row[18].replace(',', ''))
+        net_tons += float(row[14].replace(',', ''))
+        paid_acres += float(row[19].replace(',', ''))
+        paid_tons += float(row[15].replace(',', ''))
+        green += float(row[8].replace('%', ''))
+        mold += float(row[7].replace('%', ''))
+        mot += float(row[9].replace('%', ''))
+        acres += float(row[17].replace('%', ''))
+
+    #  averages
+    if num_rows > 0:
+        net_acres_weighted = net_tons / acres
+        paid_acres_weighted = paid_tons / acres
+        green_avg = green / num_rows
+        mold_avg = mold / num_rows
+        mot_avg = mot / num_rows
+    else:
+        net_acres_weighted = paid_acres_weighted = green_avg = mold_avg = mot_avg = 0
+
+    return {
+        'net_avg': net_acres_weighted,
+        'paid_avg': paid_acres_weighted,
+        'green_avg': green_avg,
+        'mold_avg': mold_avg,
+        'mot_avg': mot_avg
     }
 
-    copied_file = drive_service.files().copy(
-        fileId=source_doc_id,
-        body=file_metadata,
-        supportsAllDrives=True
-    ).execute()
 
-    # Get the ID of the new copy
-    new_file_id = copied_file.get('id')
-    print(f"New document created with ID: {new_file_id}")
-    return new_file_id
+def make_field_name(field_name):
+    new_name = field_name
+    if 'Field' in field_name:
+        return new_name
+    elif 'Block' in field_name:
+        return new_name
+    else:
+        new_name = f'Field {field_name}'
+    return new_name
 
 
-def modify_doc():
+def calculate_percent_difference(val1, val2):
+    """Calculate the percentage difference between two values."""
+    if val1 == 0 and val2 == 0:
+        return 0
+    return abs(val1 - val2) / ((val1 + val2) / 2) * 100
+
+
+def check_significant_differences(loggers_hours, threshold=20):
+    """
+    Checks if any logger's total hours are significantly different from others.
+
+    :param loggers_hours: Dictionary with logger names as keys and lists of hours as values.
+    :param threshold: Percentage difference threshold for a significant difference.
+    :return: List of logger pairs with significant differences.
+    """
+    # Calculate total hours for each logger
+    total_hours = {logger: sum(hours) for logger, hours in loggers_hours.items()}
+
+    # Get all logger names
+    loggers = list(total_hours.keys())
+    significant_diffs = []
+
+    # Pairwise comparison of each logger
+    for i in range(len(loggers)):
+        for j in range(i + 1, len(loggers)):
+            logger1, logger2 = loggers[i], loggers[j]
+            diff = calculate_percent_difference(total_hours[logger1], total_hours[logger2])
+
+            if diff >= threshold:
+                significant_diffs.append((logger1, logger2, diff))
+                print(f"Significant difference between {logger1} and {logger2}: {diff:.2f}%")
+
+    return significant_diffs
+
+
+def get_document_id(crop_type, version, logger_len):
+    # Document IDs
+    doc_ids = {
+        "Tomatoes": {
+            "v1": "1DnqzTxylzQ9ExuQYfQ04qjzWHTjyvgO1Ktj_iu6FgXc",
+            "v2": {
+                1: "1ri2g-0fwH0EFeCcMA0zRm3CSj_MjEL4tYnaGTIBgVy8",
+                2: "1h0JSSaJn_oEOs0KnGoHoVtt1uZdoAcT2joEQy_KnKp8",
+                3: "1LVkxftJ1BgDGZUJyd3pGbA0BPXf-QEntnmmLgY3oj24",
+                4: "10WpDZIu_buZVzCanCRjuGhbrXLxrkvHgZTHQefYbKNM",
+            },
+        },
+        "Default": {
+            "v1": "1t0RtF6gMzwtbuG94aBeOhWo1s6zvbdYWZS8PPn2ILhg",
+            "v2": {
+                1: "1PGq3KUcUIJODi3tW9yQYoXizlQN79JD6_7ux6TFwXHc",
+                2: "1S8G1lHQNK5rtUoCPSPrlb50dXyPzONx3UuPh8RyASYs",
+                3: "1PKEgmFXiSjcK4AjL0gHYxhW6n3ZRZ2YQEg3AttZpHZ0",
+                4: "1SYHXx_MRhZyGCrEdgn0YNMKnknO6eCKn6U365e_-hPg",
+            },
+        },
+    }
+    crop_docs = doc_ids.get(crop_type, doc_ids["Default"])
+    if version == "v1":
+        return crop_docs["v1"]
+    elif version == "v2" and logger_len in crop_docs["v2"]:
+        return crop_docs["v2"][logger_len]
+    return None
+
+
+def update_field_yields(sheet_id, growers, range_name='Sheet1'):
+    """
+    Updates the net_yield and paid_yield attributes of Field objects from Google Sheets.
+
+    :param growers:
+    :param sheet_id: Google Sheet ID containing yield data.
+    :param range_name: The sheet range to search within.
+    :param growers_pickle_path: Path to the pickle file storing grower objects.
+    """
+    g_sheet = GSheetCredentialSevice.GSheetCredentialSevice()
+    service = g_sheet.getService()
+
+    # Read Google Sheet
+    result = getServiceRead(range_name, sheet_id, service)
+    for grower in growers:
+        for field in grower.fields:
+            # Fetch matching rows from Google Sheets
+
+            sheet_rows = get_grower_field_row(sheet_id, range_name, grower.name, field, result=result)
+
+            if sheet_rows:
+                # Compute yield averages
+                field_averages = get_field_average(sheet_rows)
+
+                # Update field attributes
+                field.net_yield = field_averages["net_avg"]
+                field.paid_yield = field_averages["paid_avg"]
+
+                print(f"Updated {field.name}: Net Yield = {field.net_yield}, Paid Yield = {field.paid_yield}")
+
+    Decagon.write_pickle(data=growers, filename='pickle_pre_purge.pickle')
+
+    print("✅ Field yield updates completed.")
+
+
+def modify_doc(grower_name, field_name, version='v2'):
+    """
+    Main driver for filling in the doc template copy with field info
+    :param grower_name:
+    :param field_name:
+    """
     creds = get_credentials()
-    field_name = 'Bays Ranch30'
+
+    # Field info
+    field = Decagon.get_field(field_name, grower_name)
+    logger_len = len(field.loggers)
+    logger_cardinals = [logger.logger_direction for logger in field.loggers]
+    logger_names = [logger.name for logger in field.loggers]
+
+    # Check logger hour percent diff
+    table_results = SQLScripts.get_entire_table_points(field_name, this_year=True)
+    loggers_hours = get_each_logger_column(table_results, 'daily_hours')
 
     # Create the Drive and Docs service objects
     drive_service = build('drive', 'v3', credentials=creds)
     docs_service = build('docs', 'v1', credentials=creds)
 
-    # document_id = '1mcTWM38oxH-S2JhfNqo9zP_QokKwaz2MDBMTiIewgXs' #  OG
-    document_id = '1ri2g-0fwH0EFeCcMA0zRm3CSj_MjEL4tYnaGTIBgVy8'  # styled Javi version
-    name = 'Field Report ' + field_name
-    new_doc_id = make_copy_doc(drive_service, document_id, name)
-    document_id = new_doc_id
-    # Field info
+    # Main logic
+    name = f"Field Report {field_name}"
+    document_id = get_document_id(field.crop_type, version, logger_len)
 
-    growers = Decagon.open_pickle()
-    field = Decagon.get_field(field_name, 'Bays Ranch')
-    planting_date = field.loggers[0].planting_date
+    if document_id:
+        new_doc_id = make_copy_doc(drive_service, document_id, name)
+        document_id = new_doc_id
+
+        if field.crop_type == "Tomatoes":
+            # T STAR SHEET INFO
+
+            range = "Sheet1"
+            grower_field = get_grower_field_row(SHEET_ID, range, grower_name, field)
+            field_averages = get_field_average(grower_field)
+            net, paid, green, mold, mot = (
+                field_averages["net_avg"],
+                field_averages["paid_avg"],
+                field_averages["green_avg"],
+                field_averages["mold_avg"],
+                field_averages["mot_avg"],
+            )
+
+        # Handle the file/move it to the corresponding folder
+        create_or_use_folder_and_move_document(drive_service, document_id, grower_name)
 
     # Get VWC, Inches, PSI, Hours/VPD, Max Temp
-    table_results = SQLScripts.get_entire_table_points([field_name])
+    print('Getting table results')
     vwc_data_dict, soil = get_vwc_data(table_results)
-    inches = get_total_column(table_results, 'daily_inches')  # List
-    total_et_hours = get_total_column(table_results, 'et_hours')
-    total_irrigation_hours = get_total_column(table_results, 'daily_hours')
-    average_psi = get_average_value(table_results, 'psi')  # Num
+    inches_averaged = get_column_averaged(table_results, 'daily_inches')
+    inches = get_total_sum_column(table_results, 'daily_inches')  # List
+    total_et_hours = get_et_hours(table_results, 'et_hours')
+    total_irrigation_hours = get_total_sum_column(table_results, 'daily_hours')
     month_irrigation = get_monthly_column(table_results, 'daily_inches')  # dict of months inches summed
     month_psi = get_monthly_column(table_results, 'psi', average=True)  # dict of months psi average
+    psi_values = get_psi_values(table_results)
+    month_irr_loggers = get_monthly_column_loggers(table_results, 'daily_inches')
 
     # MAX VALUES ON MAX TEMP DAY
     max_temp, max_temp_date, peak_time_on_date = get_max_column_with_date_and_time(table_results, 'ambient_temperature')
@@ -1206,62 +870,199 @@ def modify_doc():
     max_temp_date = max_temp_date.strftime('%m/%d')
 
     # AVERAGES
-    # over_100 = days_above_100(table_results)
     # psi_ranges = get_psi_categorized_data(table_results)
-    # psi_values = get_psi_values(table_results)
+    average_psi = get_daily_average_value(table_results, 'psi')
     average_time = get_average_time(table_results)
-    average_temp = get_average_value(table_results, 'ambient_temperature')
-    average_rh = get_average_value(table_results, 'rh')
-    average_vpd = get_average_value(table_results, 'vpd')
+    average_temp = get_daily_average_value(table_results, 'ambient_temperature')
+    average_rh = get_daily_average_value(table_results, 'rh')
+    average_vpd = get_daily_average_value(table_results, 'vpd')
+    average_hours = get_loggers_averaged(table_results, 'daily_hours')
 
-    # SETUP HEADER
-    start_date, end_date = get_start_end_dates(table_results)
-    start_date = start_date.strftime('%m/%d')
-    end_date = end_date.strftime('%m/%d')
-    header_text = f'{field.grower.name}\n{field.grower.name} {field.nickname} - {field.acres} acres\n{field.crop_type}\n{start_date} - {end_date}'
-    header_text2 = '2024 End of Year Report'
-
-    # Create charts using Matplotlib
-    pie_image_path = create_pie_chart(vwc_data_dict)
-    # bucket_image_path = create_psi_bucket_graph_with_percentages(psi_values)
-    vwc_bucket_path = create_vwc_bucket_chart(vwc_data_dict, soil.bounds)
-    bar_chart_path = create_bar_graph(month_irrigation, 'Monthly Irrigation Inches')
+    # CHARTS
+    pie_image_path = ReportCharts.create_pie_chart(vwc_data_dict)
+    psi_bucket_image_path = ReportCharts.create_alternative_psi_graph(psi_values, field.crop_type, average_psi)
+    if version == 'v1':
+        bar_chart_path = ReportCharts.create_bar_graph(month_irrigation, inches)
+    else:
+        bar_chart_path = ReportCharts.create_combined_bar_graph(month_irr_loggers)
 
     # Upload the image to Google Drive
+    print('Uploading images to Google drive')
     pie_file_id = upload_image_to_drive(pie_image_path, drive_service)
     bar_file_id = upload_image_to_drive(bar_chart_path, drive_service)
-    # bucket_file_id = upload_image_to_drive(bucket_image_path, drive_service)
-    vwc_bucket_file_id = upload_image_to_drive(vwc_bucket_path, drive_service)
-    # bar_line_id = upload_image_to_drive(bar_line_path, drive_service)
+    psi_bucket_file_id = upload_image_to_drive(psi_bucket_image_path, drive_service)
+    crop_image_url = ''
+    if field.crop_type == 'Tomatoes':
+        tomato_path = 'Logos/tomato_image.png'
+        tomato_id = upload_image_to_drive(tomato_path, drive_service)
+        crop_image_url = f'https://drive.google.com/uc?id={tomato_id}'
+    if field.crop_type == 'Almonds':
+        almonds_path = 'Logos/almonds.png'
+        almonds_id = upload_image_to_drive(almonds_path, drive_service)
+        crop_image_url = f'https://drive.google.com/uc?id={almonds_id}'
+    if field.crop_type == 'Pistachios':
+        pistachio_path = 'Logos/pistachio.png'
+        pistachio_id = upload_image_to_drive(pistachio_path, drive_service)
+        crop_image_url = f'https://drive.google.com/uc?id={pistachio_id}'
+    if field.crop_type == 'Corn':
+        corn_path = 'Logos/corn.png'
+        corn_id = upload_image_to_drive(corn_path, drive_service)
+        crop_image_url = f'https://drive.google.com/uc?id={corn_id}'
 
-    # create_right_aligned_header(docs_service, document_id, field_name)
-    # insert_image_into_doc(docs_service, document_id, pie_file_id)
+    # SETUP HEADER
+    nickname = make_field_name(field.nickname)
+    start_date, end_date = get_start_end_dates(table_results)
+    start_date = start_date.strftime('%B %d')
+    end_date = end_date.strftime('%B %d')
+    header_text_before = f'{field.grower.name}\n{nickname}\n'
+    if field.grower.name == 'Kubo & Young':
+        header_text_before = f'Kubo & Yeung\n{nickname}\n'
+    header_text_after = f' - {field.acres} acres\n{start_date} - {end_date}'
+    header_text2 = '2024 End of Year Report'
 
-    create_right_aligned_header(docs_service, document_id, header_text)
+    # HEADER
+    header_with_image(docs_service, document_id, header_text_before, field.crop_type, header_text_after, crop_image_url)
     append_to_header_center_aligned(docs_service, document_id, header_text2)
+
     # IRRIGATION
-    bodies = [total_et_hours, round(total_irrigation_hours, 1), round(inches / 12, 1)]
-    insert_into_second_row(docs_service, document_id, bodies)
+    et = f'{round(total_et_hours, 1)} Hours'
+    acre_ft = round(inches / 12, 1)
+    if version == 'v1':
+        hours = f'{round(average_hours, 1)} Hours'
+        bodies = [et, hours, acre_ft]
+        insert_into_table_row(docs_service, document_id, bodies)
+    elif version == 'v2':
+        # Generate headers dynamically
+        headers = ['ET Hours'] + logger_cardinals[:logger_len] + ['Acre/Ft']
+        insert_into_table_row(docs_service, document_id, headers, row_index=0)
+
+        # Generate data dynamically
+        loggers_hours_data = [f"{round(sum(loggers_hours[logger_names[i]]), 1)} Hours" for i in range(logger_len)]
+        data = [et] + loggers_hours_data + [acre_ft]
+        insert_into_table_row(docs_service, document_id, data, row_index=1)
 
     # ENVIRONMENTAL DATA
     air_temp = f'{round(average_temp, 1)}°F'
     bodies = [average_time, air_temp, f'{round(average_rh, 1)}%', round(average_vpd, 1)]
-    insert_into_second_row(docs_service, document_id, bodies, table_index=1)
+    insert_into_table_row(docs_service, document_id, bodies, table_index=1)
 
     # HOTTEST DAY
     max_temp = f'{round(max_temp, 1)}°F'
-    bodies = [f'{max_temp_date} - {peak_time_on_date}', max_temp, f'{round(max_rh_on_date, 1)}%',
-              round(max_vpd_on_date, 1)]
-    insert_into_second_row(docs_service, document_id, bodies, table_index=2)
-    # CHARTS
-    insert_image_into_table_cell(docs_service, document_id, pie_file_id, table_index=5, row_index=1)
-    insert_image_into_table_cell(docs_service, document_id, vwc_bucket_file_id, table_index=5, row_index=1,
-                                 cell_index=2)
-    insert_image_into_table_cell(docs_service, document_id, bar_file_id, table_index=5, row_index=3, cell_index=1)
+    max_temp_day = f'{max_temp_date} - {peak_time_on_date}'
+    bodies = [max_temp_day, max_temp, f'{round(max_rh_on_date, 1)}%', round(max_vpd_on_date, 1)]
+    insert_into_table_row(docs_service, document_id, bodies, table_index=2)
 
+    # YIELD DATA
+    if field.crop_type == 'Tomatoes' and net != 0.0:
+        net = f'{round(net, 1)} t/ac'
+        paid = f'{round(paid, 1)} t/ac'
+        green = f'{round(green, 1)}%'
+        mold = f'{round(mold, 1)}%'
+        mot = f'{round(mot, 1)}%'
+        bodies = [net, paid, green, mold, mot]
+        insert_into_table_row(docs_service, document_id, bodies, table_index=3)
+
+    # IMAGES INTO TABLES
+    insert_image_into_table_cell(docs_service, document_id, pie_file_id, table_index=5, row_index=1, height=255,
+                                 width=285)
+    insert_image_into_table_cell(docs_service, document_id, psi_bucket_file_id, table_index=5, row_index=1,
+                                 cell_index=2, height=265)
+    insert_image_into_table_cell(docs_service, document_id, bar_file_id, table_index=5, row_index=3, cell_index=1,
+                                 height=215, width=435)
+
+    # download_google_doc_as_docx(document_id, drive_service, f'{field_name}.docx')
     print('Data inserted into Google Doc')
 
-# def irrigation_hours_report(table_results):
+
+def create_excel_with_loggers_hours(output_file="loggers_hours.xlsx"):
+    """
+    Creates an Excel file listing logger hours for each field and logger.
+    :param output_file: Name of the output Excel file.
+    """
+    growers = Decagon.open_pickle()
+
+    # Initialize a list to store data
+    data = []
+
+    # Iterate through growers
+    try:
+        for grower in growers:
+            if 'Lucero' in grower.name:
+                for field in grower.fields:
+                    # Get the table results for the field
+                    table_results = SQLScripts.get_entire_table_points(
+                        field.name, this_year=True)
+
+                    # Calculate the total loggers hours
+                    logger_hours = get_each_logger_column(table_results, 'daily_hours')
+
+                    # Append each logger's data to the data list
+                    for logger, hours in logger_hours.items():
+                        total_hours = sum(hours)
+                        data.append({
+                            "Grower": grower.name,
+                            "Field Name": field.name,
+                            "Logger": logger,
+                            "Hours": total_hours
+                        })
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+    # Create a DataFrame from the data
+    df = pd.DataFrame(data)
+
+    # Expand the 'Hours' column so each hour appears in a separate row
+    df = df.explode('Hours').reset_index(drop=True)
+
+    # Write the DataFrame to an Excel file
+    df.to_excel(output_file, index=False, engine='openpyxl')
+
+    print(f"Excel file created: {output_file}")
+
 
 def main():
-    modify_doc()
+    guille = ['Riley Chaney Farms', 'Carvalho', 'Ryan Jones', 'Andrew']
+    redo = ['Turlock FruitCo']
+    done = []
+    # done = []
+    num = 0
+    not_done = []  # made it to knight farms index 24 of growers need to run the rest
+    growers = Decagon.open_pickle()
+    try:
+        for grower in growers:
+            if grower.name in redo:
+                try:
+                    done.append(grower.name)
+                    for field in grower.fields:
+                        # if field.name in redo:
+                        try:
+                            modify_doc(grower.name, field.name)
+                            # else:
+                            #     not_done.append(field.name)
+                        except Exception as e:
+                            print(f"Error processing field {field.name}: {e}")
+                            not_done.append(field.name)  # append the field that had an error
+                except Exception as e:
+                    print(f"Error processing grower {grower.name}: {e}")
+        print(done)
+    except Exception as e:
+        print(f"General error: {e}")
+    print(f'Not done: {not_done}')
+
+
+# create_excel_with_loggers_hours()
+main()
+
+# growers = Decagon.open_pickle('pickle_pre_purge.pickle')
+# # update_field_yields(SHEET_ID, growers)
+# total_net_yield = 0
+# count = 0
+# for grower in growers:
+#     for field in grower.fields:
+#         if field.net_yield is not None:
+#             total_net_yield += field.net_yield
+#             count += 1
+#
+# avg_net_yield = total_net_yield / count if count > 0 else 0
+# print(avg_net_yield)
+# 45.1 49, 52,

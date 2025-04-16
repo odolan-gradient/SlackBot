@@ -7,7 +7,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 # Your existing constants
-DIRECTORY_YEAR = "2024"
+DIRECTORY_YEAR = "2025"
 PICKLE_DIRECTORY = f"H:\\Shared drives\\Stomato\\{DIRECTORY_YEAR}\\Pickle\\"
 PICKLE_NAME = f"{DIRECTORY_YEAR}_pickle.pickle"
 PICKLE_PATH = PICKLE_DIRECTORY + PICKLE_NAME

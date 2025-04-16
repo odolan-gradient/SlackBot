@@ -264,7 +264,7 @@ class Field(object):
                                         else:
                                             new_data_to_write_to_portal = new_data_to_write_to_portal or False
 
-                                if new_data_to_write_to_portal:
+                                if not new_data_to_write_to_portal:
                                     print()
                                     print('\t>>> Handling ', self.name, ' Portal Data')
 
