@@ -705,8 +705,8 @@ def add_billing_menu(ack, respond, body, growers):
 
         # Log the request to Google Sheets
         request_name = 'Add Grower Billing'
-        info = body.username
-        SheetsHandler.log_request_to_sheet(request_name, body.username, info)
+        # info = body.username
+        # SheetsHandler.log_request_to_sheet(request_name, body.username, info)
     except Exception as e:
         respond(f'Error: {e} let Ollie know por favor')
     # response = {
