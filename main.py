@@ -76,7 +76,7 @@ def handle_main_menu(ack, body, respond):
     elif menu_option == 'Use Previous Days VWC':
         use_prev_days_menu(ack, respond, grower_names)
     elif menu_option == 'Add Grower Billing':
-        add_billing_menu(ack, respond, grower_names)
+        add_billing_menu(ack, respond, body, growers)
 
 
 @app.action("get_soil_type")
@@ -325,7 +325,7 @@ def handle_grower_menu(ack, body, client, respond):
         action_id = 'field_select_prev_day'
         field_list_menu(ack, respond, field_list, action_id)
 
-    elif grower_action_id == 'grower_select_billing':
+    # elif grower_action_id == 'grower_select_billing':
         growers = SharedPickle.open_pickle()
         result = SheetsHandler.billing_report_new_tab(growers)
         link = 'https://docs.google.com/spreadsheets/d/137KpyvSKY_LCqiups4EAcwMQPYHV_a55bjwRQAMEX_k/edit?gid=0#gid=0'
@@ -365,6 +365,9 @@ def handle_grower_menu(ack, body, client, respond):
         print('Showing pickle')
         request_name = 'Show Pickle'
         info = selected_value
+
+# def handle_billing(ack, body, respond):
+
 def change_soil_menu(ack, respond, grower_names):
     ack()
     action_id = 'grower_select_change_soil'
@@ -688,18 +691,33 @@ def use_prev_days_menu(ack, respond, grower_names):
     respond(response)
 
 
-def add_billing_menu(ack, respond, grower_names):
+def add_billing_menu(ack, respond, body, growers):
     ack()
-    action_id = 'grower_select_billing'
-    response = {
-        "response_type": "in_channel",
-        "text": "Add Grower to Billing Sheet",
-        "attachments": [
-            grower_select_block(grower_names, action_id)
-        ]
-    }
+    # action_id = 'grower_select_billing'
+    try:
+        # growers = SharedPickle.open_pickle()
+        result = SheetsHandler.billing_report_new_tab(growers)
+        link = 'https://docs.google.com/spreadsheets/d/137KpyvSKY_LCqiups4EAcwMQPYHV_a55bjwRQAMEX_k/edit?gid=0#gid=0'
+        if result:
+            respond(f'Added current growers to the sheet\nView here: {link}')
+        elif not result:
+            respond(f'Something went wrong contact your handsome software engineers')
 
-    respond(response)
+        # Log the request to Google Sheets
+        request_name = 'Add Grower Billing'
+        info = body.username
+        SheetsHandler.log_request_to_sheet(request_name, body.username, info)
+    except Exception as e:
+        respond(f'Error: {e} let Ollie know por favor')
+    # response = {
+    #     "response_type": "in_channel",
+    #     "text": "Add Grower to Billing Sheet",
+    #     "attachments": [
+    #         grower_select_block(grower_names, action_id)
+    #     ]
+    # }
+
+    # respond(response)
 
 
 def grower_select_block(grower_names, action_id):
