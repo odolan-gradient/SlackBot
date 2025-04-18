@@ -326,18 +326,18 @@ def handle_grower_menu(ack, body, client, respond):
         field_list_menu(ack, respond, field_list, action_id)
 
     # elif grower_action_id == 'grower_select_billing':
-        growers = SharedPickle.open_pickle()
-        result = SheetsHandler.billing_report_new_tab(growers)
-        link = 'https://docs.google.com/spreadsheets/d/137KpyvSKY_LCqiups4EAcwMQPYHV_a55bjwRQAMEX_k/edit?gid=0#gid=0'
-        if result:
-            respond(f'Added {grower.name} to the sheet\nView here: {link}')
-        elif not result:
-            respond(f'{grower.name} already in the sheet\nView here: {link}')
-
-        # Log the request to Google Sheets
-        request_name = 'Add Grower Billing'
-        info = grower.name
-        SheetsHandler.log_request_to_sheet(request_name, username, info)
+    #     growers = SharedPickle.open_pickle()
+    #     result = SheetsHandler.billing_report_new_tab(growers)
+    #     link = 'https://docs.google.com/spreadsheets/d/137KpyvSKY_LCqiups4EAcwMQPYHV_a55bjwRQAMEX_k/edit?gid=0#gid=0'
+    #     if result:
+    #         respond(f'Added {grower.name} to the sheet\nView here: {link}')
+    #     elif not result:
+    #         respond(f'{grower.name} already in the sheet\nView here: {link}')
+    #
+    #     # Log the request to Google Sheets
+    #     request_name = 'Add Grower Billing'
+    #     info = grower.name
+    #     SheetsHandler.log_request_to_sheet(request_name, username, info)
 
     elif grower_action_id == 'grower_select_show':
 
