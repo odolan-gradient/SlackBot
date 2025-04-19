@@ -38,7 +38,7 @@ def main_menu_command(ack, body, respond):
         ack()
         if body['user_id'] in ['U06NJRAT1T2', 'U4KFKMH8C']:
             menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Show Pickle', 'Use Previous Days VWC',
-                            'Add Grower Billing']
+                            'Add Grower Billing', 'Get Field Location']
         else:
             menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Show Pickle', 'Add Grower Billing', 'Get Field Location']
         main_menu(ack, respond, menu_options)
