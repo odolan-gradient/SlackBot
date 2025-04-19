@@ -767,7 +767,7 @@ def get_field_location_menu(ack, respond):
                 "action_id": "submit_field_number",
                 "placeholder": {
                     "type": "plain_text",
-                    "text": "Enter field number (e.g. 3101-3101A-NW)"
+                    "text": "Enter MS field number (example: 1416)"
                 }
             },
             "label": {

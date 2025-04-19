@@ -382,4 +382,4 @@ def scheduled_task(request):
 # write_pickle(growers)
 # list_shared_drive_files()
 # show_pickle()
-get_coords_from_kml_folder('1416')
+# get_coords_from_kml_folder('1416')
