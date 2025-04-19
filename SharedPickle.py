@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from pathlib import Path, PosixPath, PureWindowsPath
 from flask import Flask, jsonify
 from datetime import date, datetime, timedelta
-
+from xml.etree import ElementTree as ET
 import SheetsHandler
 
 try:
@@ -299,6 +299,64 @@ def get_project(field_name: str, grower_name: str = ''):
                     project = dbw.get_db_project(crop_type)
                     return project
 
+def list_all_kml_files(folder_id, service):
+    all_files = []
+    page_token = None
+
+    while True:
+        response = service.files().list(
+            q=f"'{folder_id}' in parents and mimeType='application/vnd.google-earth.kml+xml'",
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+            fields="nextPageToken, files(id, name)",
+            pageSize=1000,
+            pageToken=page_token
+        ).execute()
+
+        all_files.extend(response.get('files', []))
+        page_token = response.get('nextPageToken')
+        if not page_token:
+            break
+
+    return all_files
+
+def get_coords_from_kml_folder(field_number, folder_id="12sNfi4L4BUwQM0JYx84tXafNp_Hur9P6"):
+    """
+    Searches through KML files in a Google Drive folder for a field number match
+    and returns the first set of coordinates found.
+
+    :param field_number: str - the field number to search for
+    :param folder_id: str - the Google Drive folder ID
+    :param service: Google Drive API service instance
+    :return: tuple (lat, lon) or None if not found
+    """
+
+    files = list_all_kml_files(folder_id, service)
+
+    for file in files:
+        if field_number in file['name']:
+            request = service.files().get_media(fileId=file['id'], supportsAllDrives=True)
+            fh = io.BytesIO()
+            downloader = MediaIoBaseDownload(fh, request)
+
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+
+            fh.seek(0)
+            try:
+                tree = ET.parse(fh)
+                root = tree.getroot()
+                for elem in root.iter():
+                    if elem.tag.endswith("coordinates"):
+                        coords_text = elem.text.strip()
+                        lon, lat, *_ = coords_text.split(",")
+                        return float(lat), float(lon)
+            except Exception as e:
+                print(f"Failed to parse KML {file['name']}: {e}")
+
+    return None
+
 
 # Example usage in your Slack bot
 def slack_bot(request):
@@ -324,5 +382,4 @@ def scheduled_task(request):
 # write_pickle(growers)
 # list_shared_drive_files()
 # show_pickle()
-# list_shared_drive_files()
-# get_grower('S&S Farms')
+get_coords_from_kml_folder('1416')

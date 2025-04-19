@@ -40,7 +40,7 @@ def main_menu_command(ack, body, respond):
             menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Show Pickle', 'Use Previous Days VWC',
                             'Add Grower Billing']
         else:
-            menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Show Pickle', 'Add Grower Billing']
+            menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Show Pickle', 'Add Grower Billing', 'Get Field Location']
         main_menu(ack, respond, menu_options)
     except Exception as e:
         print(f"Error: {e}")
@@ -77,6 +77,25 @@ def handle_main_menu(ack, body, respond):
         use_prev_days_menu(ack, respond, grower_names)
     elif menu_option == 'Add Grower Billing':
         add_billing_menu(ack, respond, body, growers)
+    elif menu_option == 'Get Field Location':
+        get_field_location_menu(ack, respond)
+
+@app.action("get_field_location")
+def handle_field_location_lookup(ack, body, respond):
+    ack()
+
+    field_number = body['state']['values']['field_location_input']['submit_field_number']['value']
+
+    try:
+        coords = SharedPickle.get_coords_from_kml_folder(field_number)
+        if coords:
+            lat, lon = coords
+            maps_link = f"https://www.google.com/maps?q={lat},{lon}"
+            respond(f"📍 Here's the location for field `{field_number}`:\n<{maps_link}|View on Google Maps>")
+        else:
+            respond(f"⚠️ Field `{field_number}` not found in any KML file.")
+    except Exception as e:
+        respond(f"❌ Error while looking up field location: {e}")
 
 
 @app.action("get_soil_type")
@@ -736,6 +755,42 @@ def grower_select_block(grower_names, action_id):
             }
         ]
     }
+
+def get_field_location_menu(ack, respond):
+    ack()
+    blocks = [
+        {
+            "type": "input",
+            "block_id": "field_location_input",
+            "element": {
+                "type": "plain_text_input",
+                "action_id": "submit_field_number",
+                "placeholder": {
+                    "type": "plain_text",
+                    "text": "Enter field number (e.g. 3101-3101A-NW)"
+                }
+            },
+            "label": {
+                "type": "plain_text",
+                "text": "Get Field Location"
+            }
+        },
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "Submit"
+                    },
+                    "value": "get_field_location",
+                    "action_id": "get_field_location"
+                }
+            ]
+        }
+    ]
+    respond(blocks=blocks)
 
 
 def turn_on_psi_menu(ack, respond, grower_names):
