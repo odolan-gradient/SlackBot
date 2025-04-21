@@ -92,8 +92,19 @@ def handle_field_location_lookup(ack, body, respond):
             lat, lon = coords
             maps_link = f"https://www.google.com/maps?q={lat},{lon}"
             respond(f"📍 Here's the location for field `{field_number}`:\n<{maps_link}|View on Google Maps>")
+
+            # Log the request to Google Sheets
+            request_name = 'Get Field Location'
+            info = [field_number, lat, lon]
+            username = body['user']['name']
+            SheetsHandler.log_request_to_sheet(request_name, username, info)
         else:
             respond(f"⚠️ Field `{field_number}` not found in any KML file.")
+            # Log the request to Google Sheets
+            request_name = 'Get Field Location'
+            info = [field_number, 'No field found']
+            username = body['user']['name']
+            SheetsHandler.log_request_to_sheet(request_name, username, info)
     except Exception as e:
         respond(f"❌ Error while looking up field location: {e}")
 
