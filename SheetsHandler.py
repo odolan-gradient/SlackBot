@@ -174,6 +174,75 @@ def billing_report_new_tab(growers):
     print(f"New tab '{new_sheet_name}' created and data written for growers.")
     return True
 
+def billing_report_new_tab_v2(growers):
+    '''
+    Creates or updates sheet tabs based on the install month and year of each field's logger.
+    Each field is placed in the tab corresponding to the earliest install month-year it was installed.
+    :param growers: A list of grower objects
+    :return: True if any data was written, False otherwise
+    '''
+    from collections import defaultdict
+    from datetime import datetime
+
+    spreadsheet_id = '137KpyvSKY_LCqiups4EAcwMQPYHV_a55bjwRQAMEX_k'
+    service = get_drive_service()
+
+    # Retrieve all existing sheet names and build a record of what fields have already been written
+    sheet_names = get_all_sheet_names(service, spreadsheet_id)
+    recorded_fields_by_sheet = {sheet_name: set(get_existing_fields(service, spreadsheet_id, sheet_name)) for sheet_name in sheet_names}
+
+    # Track all data to be written, grouped by month-year
+    data_by_month = defaultdict(list)
+    month_keys = {}  # maps formatted month to sortable datetime for sorting later
+
+    for grower in growers:
+        for field in grower.fields:
+            unique_field_identifier = f'{grower.name}{field.nickname}'
+
+            # Extract install dates from loggers (if any exist)
+            install_dates = [logger.install_date for logger in field.loggers if logger.install_date]
+            if not install_dates:
+                continue
+
+            earliest_install_date = min(install_dates)
+            month_key = earliest_install_date.strftime('%Y-%m')  # sortable key like '2025-03'
+            month_name = earliest_install_date.strftime('%B %Y')  # human-friendly tab name like 'March 2025'
+            month_keys[month_name] = datetime.strptime(month_key, '%Y-%m')
+
+            if unique_field_identifier in recorded_fields_by_sheet.get(month_name, set()):
+                continue  # Skip if already recorded in that month's tab
+
+            # Format all install dates for display (not just earliest)
+            formatted_dates = ', '.join(sorted(set(dt.strftime('%d-%b') for dt in install_dates)))
+            row_data = [
+                grower.region,
+                formatted_dates,
+                grower.name,
+                '',  # Bill Address
+                f"'{field.nickname}",
+                field.crop_type,
+                field.acres,
+                '',  # Cost
+                ''   # Total
+            ]
+            data_by_month[month_name].append(row_data)
+
+    # Write out data to appropriate monthly tabs in chronological order
+    wrote_any_data = False
+    for month_name in sorted(data_by_month, key=lambda x: month_keys[x]):
+        rows = data_by_month[month_name]
+        if month_name not in sheet_names:
+            create_new_sheet_tab(service, spreadsheet_id, month_name)
+        column_headers = ['Region', 'Date Installed', 'Grower', 'Bill Address', 'Fields', 'Crop', 'Acres', 'Cost', 'Total']
+        write_data_to_sheet(service, spreadsheet_id, month_name, column_headers, rows)
+        wrote_any_data = True
+        print(f"✅ Updated tab '{month_name}' with {len(rows)} new fields.")
+
+    if not wrote_any_data:
+        print("No new fields to add for any month.")
+        return False
+
+    return True
 
 def read_sheet_data(service, spreadsheet_id, sheet_name):
     '''

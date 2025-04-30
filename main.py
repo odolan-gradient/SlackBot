@@ -726,7 +726,7 @@ def add_billing_menu(ack, respond, body, growers):
     # action_id = 'grower_select_billing'
     try:
         # growers = SharedPickle.open_pickle()
-        result = SheetsHandler.billing_report_new_tab(growers)
+        result = SheetsHandler.billing_report_new_tab_v2(growers)
         link = 'https://docs.google.com/spreadsheets/d/137KpyvSKY_LCqiups4EAcwMQPYHV_a55bjwRQAMEX_k/edit?gid=0#gid=0'
         if result:
             respond(f'Added current growers to the sheet\nView here: {link}')
@@ -735,8 +735,8 @@ def add_billing_menu(ack, respond, body, growers):
 
         # Log the request to Google Sheets
         request_name = 'Add Grower Billing'
-        # info = body.username
-        # SheetsHandler.log_request_to_sheet(request_name, body.username, info)
+        info = body.username
+        SheetsHandler.log_request_to_sheet(request_name, body.username, info)
     except Exception as e:
         respond(f'Error: {e} let Ollie know por favor')
     # response = {
