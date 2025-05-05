@@ -79,6 +79,8 @@ def handle_main_menu(ack, body, respond):
         add_billing_menu(ack, respond, body, growers)
     elif menu_option == 'Get Field Location':
         get_field_location_menu(ack, respond)
+    elif menu_option == 'Check if inside MS field':
+        get_coord_location_menu(ack, respond)
 
 @app.action("get_field_location")
 def handle_field_location_lookup(ack, body, respond):
@@ -108,6 +110,39 @@ def handle_field_location_lookup(ack, body, respond):
     except Exception as e:
         respond(f"❌ Error while looking up field location: {e}")
 
+@app.action("get_field_from_coord")
+def handle_field_from_coordinate_lookup(ack, body, respond):
+    ack()
+
+    raw_coords = body['state']['values']['field_coord_input']['submit_field_coord']['value']
+    if ',' in raw_coords:
+        parts = raw_coords.split(',')
+    else:
+        parts = raw_coords.split()
+
+    try:
+        lat, lon = float(parts[0].strip()), float(parts[1].strip())
+    except Exception:
+        respond("❌ Please provide valid coordinates like `36.862627, -120.607836`")
+        return
+
+    try:
+        matches = SharedPickle.get_kml_from_coordinate(lat, lon)
+
+        if matches:
+            msg = f"📍 Coordinate `{lat}, {lon}` is inside:\n" + "\n".join(f"• `{name}`" for name in matches)
+        else:
+            msg = f"❌ Coordinate `{lat}, {lon}` is not found inside any KML polygon."
+
+        respond(msg)
+
+        # Log the request to Google Sheets
+        request_name = 'Check if inside MS field'
+        info = [lat, lon, matches]
+        username = body['user']['name']
+        SheetsHandler.log_request_to_sheet(request_name, username, info)
+    except Exception as e:
+        respond(f"❌ Error while checking coordinates: {e}")
 
 @app.action("get_soil_type")
 def handle_get_soil(ack, body, respond):
@@ -216,8 +251,6 @@ def handle_toggle_psi(ack, body, respond):
         growers = SharedPickle.open_pickle()
         for logger in loggers:
             response_text += toggle_psi(grower_name, field, logger, on_or_off, growers)
-        growers = SharedPickle.open_pickle()
-        SharedPickle.write_pickle(growers)
         respond(text=response_text)
 
         # Log the request to Google Sheets
@@ -803,6 +836,42 @@ def get_field_location_menu(ack, respond):
     ]
     respond(blocks=blocks)
 
+def get_coord_location_menu(ack, respond):
+    ack()
+    blocks = [
+        {
+            "type": "input",
+            "block_id": "field_coord_input",
+            "element": {
+                "type": "plain_text_input",
+                "action_id": "submit_field_coord",
+                "placeholder": {
+                    "type": "plain_text",
+                    "text": "Enter coordinates like: 36.875752, -120.3441"
+                }
+            },
+            "label": {
+                "type": "plain_text",
+                "text": "Find Field by Coordinate"
+            }
+        },
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "Submit"
+                    },
+                    "value": "get_field_from_coord",
+                    "action_id": "get_field_from_coord"
+                }
+            ]
+        }
+    ]
+    respond(blocks=blocks)
+
 
 def turn_on_psi_menu(ack, respond, grower_names):
     ack()
@@ -833,6 +902,7 @@ def toggle_psi(grower_name, field_name, logger_name, psi_toggle, growers):
                             if psi_toggle == 'on':
                                 response_text += f'Turned On IR for {logger.name}\n'
                                 logger.ir_active = True
+    SharedPickle.write_pickle(growers)
     return response_text
 
 
@@ -911,3 +981,5 @@ def slack_bot(request):
 # get_soil_type_from_coords(36.754599, -120.453252)
 # toggle_psi('Andrew', 'Andrew3101-3103', '3101-3101A-NW', 'off')
 # change_logger_soil_type('BR-7A-C', 'Bays Ranch7A', 'Bays Ranch', new_soil_type='Clay Loam')
+# growers = SharedPickle.open_pickle()
+# SheetsHandler.billing_report_new_tab_v2(growers)
