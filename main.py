@@ -768,8 +768,10 @@ def add_billing_menu(ack, respond, body, growers):
 
         # Log the request to Google Sheets
         request_name = 'Add Grower Billing'
-        info = body.username
-        SheetsHandler.log_request_to_sheet(request_name, body.username, info)
+        # TODO
+        # info = body.username
+        #Error: 'dict' object has no attribute 'username' let Ollie know por favor
+        SheetsHandler.log_request_to_sheet(request_name, 'need to fix', '')
     except Exception as e:
         respond(f'Error: {e} let Ollie know por favor')
     # response = {
