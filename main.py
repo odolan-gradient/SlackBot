@@ -1,5 +1,5 @@
 import os
-from collections import defaultdict
+from collections import defaultdict, deque
 
 import requests
 from dotenv import load_dotenv
@@ -142,6 +142,16 @@ def delete_psi_values_for_specific_logger(grower_name, field_name, logger_name):
     dml = (f"UPDATE `{project}.{field_dataset}.{logger_name}` SET psi = NULL, sdd = NULL, canopy_temperature = NULL WHERE TRUE")
     try:
         dbw.run_dml(dml, project=project)
+        # update pickle
+        for grower in growers:
+            if grower.name == grower_name:
+                for field in grower.fields:
+                    if field.name == field_name:
+                        for logger in field.loggers:
+                            if logger.name == logger_name:
+                                logger.ir_active = False
+                                logger.consecutive_ir_values = deque()
+        SharedPickle.write_pickle(growers)
         return f"Cleared PSI for {logger_name} in {field_name}"
     except Exception as e:
         return f"Error clearing {logger_name}: {e}"
@@ -1069,6 +1079,21 @@ def toggle_psi(grower_name, field_name, logger_name, psi_toggle, growers):
                                 logger.ir_active = True
     SharedPickle.write_pickle(growers)
     return response_text
+
+
+def delete_psi_menu(ack, respond, grower_names):
+    ack()
+    action_id = 'grower_select_delete_psi'
+
+    response = {
+        "response_type": "in_channel",
+        "text": "Select Grower to Delete PSI:",
+        "attachments": [
+            grower_select_block(grower_names, action_id)
+        ]
+    }
+
+    respond(response)
 
 
 def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str, new_soil_type: str):
