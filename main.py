@@ -37,10 +37,10 @@ def main_menu_command(ack, body, respond):
     try:
         ack()
         if body['user_id'] in ['U06NJRAT1T2', 'U4KFKMH8C']:
-            menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Show Pickle', 'Use Previous Days VWC',
+            menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Delete PSI values', 'Show Pickle', 'Use Previous Days VWC',
                             'Add Grower Billing', 'Get Field Location']
         else:
-            menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Show Pickle', 'Add Grower Billing', 'Get Field Location']
+            menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Delete PSI values', 'Show Pickle', 'Add Grower Billing', 'Get Field Location']
         main_menu(ack, respond, menu_options)
     except Exception as e:
         print(f"Error: {e}")
@@ -59,6 +59,95 @@ def generate_options(list_of_items):
     ]
 
 
+
+# ---------------- Delete PSI helper & menus -----------------
+
+def logger_delete_menu(logger_list, preselected=None):
+    logger_action_id = 'logger_select_delete_psi'
+    logger_block = logger_select_block(logger_list, logger_action_id, initial_selected=preselected)
+    confirm_block = {
+        "type": "actions",
+        "elements": [
+            {
+                "type": "button",
+                "text": {"type": "plain_text", "text": "Confirm Delete"},
+                "style": "danger",
+                "action_id": "delete_confirm",
+                "value": "confirm"
+            }
+        ]
+    }
+    return [logger_block, confirm_block]
+
+# existing helper below
+# ---------------- Delete PSI helper -----------------
+
+def delete_psi_values_for_field(grower_name, field_name):
+    """Set psi, sdd and canopy_temperature to NULL for every logger in the field."""
+    growers = SharedPickle.open_pickle()
+    dbw = DBWriter.DBWriter()
+    response_lines = []
+    project = SharedPickle.get_project(field_name, grower_name)
+    for grower in growers:
+        if grower.name != grower_name:
+            continue
+        for field in grower.fields:
+            if field.name != field_name:
+                continue
+            field_dataset = dbw.remove_unwanted_chars_for_db_dataset(field.name)
+            for logger in field.loggers:
+                table_name = logger.name
+                dml = (f"UPDATE `{project}.{field_dataset}.{table_name}` "
+                       f"SET psi = NULL, sdd = NULL, canopy_temperature = NULL WHERE TRUE")
+                try:
+                    dbw.run_dml(dml, project=project)
+                    response_lines.append(f"Cleared PSI for {logger.name} in {field_name}")
+                except Exception as e:
+                    response_lines.append(f"Error clearing {logger.name}: {e}")
+    return '\n'.join(response_lines)
+
+# ----------------------------------------------------
+
+@app.action("logger_select_delete_psi")
+@app.action("delete_confirm")
+def handle_delete_psi(ack, body, respond):
+    ack()
+    user_id = body['user']['id']
+    action_id = body['actions'][0]['action_id']
+    if action_id == 'logger_select_delete_psi':
+        selected_options = body['actions'][0]['selected_options']
+        user_selections[user_id][action_id] = [opt['value'] for opt in selected_options]
+    elif action_id == 'delete_confirm':
+        user_selections[user_id][action_id] = True
+
+    if 'logger_select_delete_psi' in user_selections[user_id] and 'delete_confirm' in user_selections[user_id]:
+        grower = user_selections[user_id]['grower']
+        fields = user_selections[user_id]['fields']
+        loggers = user_selections[user_id]['logger_select_delete_psi']
+        responses = []
+        for field_name in fields:
+            for logger in loggers:
+                resp = delete_psi_values_for_specific_logger(grower.name, field_name, logger)
+                responses.append(resp)
+        respond(text='\n'.join(responses))
+        SheetsHandler.log_request_to_sheet('Delete PSI Values', body['user']['name'], ', '.join(loggers))
+        del user_selections[user_id]
+
+
+def delete_psi_values_for_specific_logger(grower_name, field_name, logger_name):
+    growers = SharedPickle.open_pickle()
+    dbw = DBWriter.DBWriter()
+    project = SharedPickle.get_project(field_name, grower_name)
+    field_dataset = dbw.remove_unwanted_chars_for_db_dataset(field_name)
+    dml = (f"UPDATE `{project}.{field_dataset}.{logger_name}` SET psi = NULL, sdd = NULL, canopy_temperature = NULL WHERE TRUE")
+    try:
+        dbw.run_dml(dml, project=project)
+        return f"Cleared PSI for {logger_name} in {field_name}"
+    except Exception as e:
+        return f"Error clearing {logger_name}: {e}"
+
+# ----------------------------------------------------
+
 @app.action("menu_select")
 def handle_main_menu(ack, body, respond):
     ack()
@@ -71,6 +160,8 @@ def handle_main_menu(ack, body, respond):
         get_soil_menu(ack, respond)
     elif menu_option == 'Toggle PSI':
         turn_on_psi_menu(ack, respond, grower_names)
+    elif menu_option == 'Delete PSI values':
+        delete_psi_menu(ack, respond, grower_names)
     elif menu_option == 'Show Pickle':
         show_pickle_menu(ack, respond, grower_names)
     elif menu_option == 'Use Previous Days VWC':
@@ -324,11 +415,13 @@ def handle_prev_day_selections(ack, body, respond):
 
 @app.action("field_select_change_soil")
 @app.action("field_select_psi")
+@app.action("field_select_delete_psi")
 @app.action("field_select_prev_day")
 def handle_field_select(ack, body, respond):
     ack()
     # Extract values from the actions
-    callback_id = body['callback_id']
+    action_id = body['actions'][0]['action_id']
+    callback_id = action_id
     selected_options = body['actions'][0]['selected_options']
     fields_selected = [fix_ampersand(opt['value']) for opt in selected_options]
     user_id = body['user']['id']
@@ -351,6 +444,24 @@ def handle_field_select(ack, body, respond):
         blocks = logger_and_toggle_menu(logger_list, preselected=logger_list)
         respond(blocks=blocks)
         # logger_and_toggle_menu(ack, respond, logger_list)
+    elif callback_id == 'field_select_delete_psi':
+        # store full logger list
+        user_selections[user_id]['logger_select_delete_psi'] = logger_list
+        blocks = logger_delete_menu(logger_list, preselected=logger_list)
+        respond(blocks=blocks)
+
+        # Delete PSI values for selected fields
+        grower = user_selections[user_id]['grower']
+        responses = []
+        for fname in fields_selected:
+            resp = delete_psi_values_for_field(grower.name, fname)
+            responses.append(resp)
+        respond(text='\n'.join(responses))
+
+        # Log the request
+        SheetsHandler.log_request_to_sheet('Delete PSI Values', body['user']['name'], ', '.join(fields_selected))
+        del user_selections[user_id]
+
     elif callback_id == 'field_select_prev_day':
         logger_and_dates_menu(ack, respond, logger_list)
 
@@ -362,6 +473,7 @@ def fix_ampersand(text):
 @app.action("grower_select_psi")
 @app.action("grower_select_change_soil")
 @app.action("grower_select_show")
+@app.action("grower_select_delete_psi")
 @app.action("grower_select_prev_day")
 @app.action("grower_select_billing")
 def handle_grower_menu(ack, body, client, respond):
@@ -387,6 +499,10 @@ def handle_grower_menu(ack, body, client, respond):
 
     elif grower_action_id == 'grower_select_change_soil':
         action_id = 'field_select_change_soil'
+        field_list_menu(ack, respond, field_list, action_id)
+
+    elif grower_action_id == 'grower_select_delete_psi':
+        action_id = 'field_select_delete_psi'
         field_list_menu(ack, respond, field_list, action_id)
 
     elif grower_action_id == 'grower_select_prev_day':
@@ -454,7 +570,7 @@ def field_list_menu(ack, respond, field_list, action_id):
     ack()
 
     # If PSI toggle flow, use Block Kit multi-select for multiple fields
-    if action_id == 'field_select_psi':
+    if action_id in ['field_select_psi', 'field_select_delete_psi']:
         blocks = [
             {
                 "type": "section",
