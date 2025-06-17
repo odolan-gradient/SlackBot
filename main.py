@@ -435,20 +435,16 @@ def handle_prev_day_selections(ack, body, respond):
 def handle_field_select(ack, body, respond):
     ack()
     # Extract values from the actions
-    action_data = body['actions'][0]
-    action_id = action_data.get('action_id', action_data.get('name'))
-    callback_id = action_id
-    selected_value = action_data['selected_options'][0]['value']
-    fields_selected = [fix_ampersand(selected_value)]
-    user_id = body['user']['id']
-    user_selections[user_id]['fields'] = fields_selected
+    callback_id = body['callback_id']
+    field = body['actions'][0]['selected_options'][0]['value']
+    field = fix_ampersand(field)
+    respond(f"You selected field: {field}")
+    field_obj = SharedPickle.get_field(field)
 
-    # Build combined logger list from all selected fields
-    logger_list = []
-    for fname in fields_selected:
-        field_obj = SharedPickle.get_field(fname)
-        logger_list.extend([logger.name for logger in field_obj.loggers])
-    logger_list = list(dict.fromkeys(logger_list))  # unique while preserving order
+    # Add to selections
+    user_id = body['user']['id']
+    user_selections[user_id]['field'] = field
+    logger_list = [logger.name for logger in field_obj.loggers]
 
     # Show logger menu based on callback_id
     if callback_id == 'field_select_change_soil':
