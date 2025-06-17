@@ -460,17 +460,6 @@ def handle_field_select(ack, body, respond):
         blocks = logger_delete_menu(logger_list, preselected=logger_list)
         respond(blocks=blocks)
 
-        # Delete PSI values for selected fields
-        grower = user_selections[user_id]['grower']
-        responses = []
-        for fname in fields_selected:
-            resp = delete_psi_values_for_field(grower.name, fname)
-            responses.append(resp)
-        respond(text='\n'.join(responses))
-
-        # Log the request
-        SheetsHandler.log_request_to_sheet('Delete PSI Values', body['user']['name'], ', '.join(fields_selected))
-        del user_selections[user_id]
 
     elif callback_id == 'field_select_prev_day':
         logger_and_dates_menu(ack, respond, logger_list)
