@@ -221,6 +221,7 @@ def handle_soil_and_psi_selections(ack, body, respond):
 @app.action("logger_select_psi")
 @app.action("psi_on")
 @app.action("psi_off")
+@app.action("psi_confirm")
 def handle_toggle_psi(ack, body, respond):
     ack()
     user_id = body['user']['id']
@@ -233,9 +234,11 @@ def handle_toggle_psi(ack, body, respond):
         user_selections[user_id][action_id] = [option['value'] for option in selected_options]
     elif action_id in ['psi_on', 'psi_off']:  # on or off
         user_selections[user_id][action_id] = body['actions'][0]['value']
+    elif action_id == 'psi_confirm':
+        user_selections[user_id][action_id] = True
 
     if 'logger_select_psi' in user_selections[user_id] and (
-            'psi_on' in user_selections[user_id] or 'psi_off' in user_selections[user_id]):
+            'psi_on' in user_selections[user_id] or 'psi_off' in user_selections[user_id]) and 'psi_confirm' in user_selections[user_id]:
         loggers = user_selections[user_id]['logger_select_psi']
         field = user_selections[user_id]['field']
         grower = user_selections[user_id]['grower']
@@ -245,7 +248,6 @@ def handle_toggle_psi(ack, body, respond):
             on_or_off = user_selections[user_id]['psi_on']
         elif 'psi_off' in user_selections[user_id]:
             on_or_off = user_selections[user_id]['psi_off']
-
 
         response_text = ''
         growers = SharedPickle.open_pickle()
@@ -543,8 +545,25 @@ def logger_and_toggle_menu(logger_list):
         }
     ]
 
-    # Combine logger block and toggle block
-    blocks = [logger_block] + toggle_block
+    # Confirm button block
+    confirm_block = {
+        "type": "actions",
+        "elements": [
+            {
+                "type": "button",
+                "text": {
+                    "type": "plain_text",
+                    "text": "Confirm"
+                },
+                "style": "primary",
+                "action_id": "psi_confirm",
+                "value": "confirm"
+            }
+        ]
+    }
+
+    # Combine logger block, toggle block, and confirm block
+    blocks = [logger_block] + toggle_block + [confirm_block]
     return blocks
 
 
@@ -985,3 +1004,6 @@ def slack_bot(request):
 # change_logger_soil_type('BR-7A-C', 'Bays Ranch7A', 'Bays Ranch', new_soil_type='Clay Loam')
 # growers = SharedPickle.open_pickle()
 # SheetsHandler.billing_report_new_tab_v2(growers)
+# TODO add feature to delete PSI
+# TODO feature to delete days and rerun with PSI on
+# TODO change BQ any value for any day so dont have to run queries every time
