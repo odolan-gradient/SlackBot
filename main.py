@@ -234,6 +234,11 @@ def handle_toggle_psi(ack, body, respond):
         user_selections[user_id][action_id] = [option['value'] for option in selected_options]
     elif action_id in ['psi_on', 'psi_off']:  # on or off
         user_selections[user_id][action_id] = body['actions'][0]['value']
+        # Update UI to reflect selection
+        logger_list = user_selections[user_id].get('logger_select_psi', [])
+        selected_state = 'on' if action_id == 'psi_on' else 'off'
+        blocks = logger_and_toggle_menu(logger_list, preselected=logger_list, selected_state=selected_state)
+        respond(blocks=blocks, replace_original=True)
     elif action_id == 'psi_confirm':
         user_selections[user_id][action_id] = True
 
@@ -251,8 +256,9 @@ def handle_toggle_psi(ack, body, respond):
 
         response_text = ''
         growers = SharedPickle.open_pickle()
-        for logger in loggers:
-            response_text += toggle_psi(grower_name, field, logger, on_or_off, growers)
+        for field in fields:
+            for logger in loggers:
+                response_text += toggle_psi(grower_name, field, logger, on_or_off, growers)
         respond(text=response_text)
 
         # Log the request to Google Sheets
@@ -323,30 +329,27 @@ def handle_field_select(ack, body, respond):
     ack()
     # Extract values from the actions
     callback_id = body['callback_id']
-    field = body['actions'][0]['selected_options'][0]['value']
-    field = fix_ampersand(field)
-    respond(f"You selected field: {field}")
-    field_obj = SharedPickle.get_field(field)
-
-    # Add to selections
+    selected_options = body['actions'][0]['selected_options']
+    fields_selected = [fix_ampersand(opt['value']) for opt in selected_options]
     user_id = body['user']['id']
-    user_selections[user_id]['field'] = field
+    user_selections[user_id]['fields'] = fields_selected
 
-    logger_list = [logger.name for logger in field_obj.loggers]
+    # Build combined logger list from all selected fields
+    logger_list = []
+    for fname in fields_selected:
+        field_obj = SharedPickle.get_field(fname)
+        logger_list.extend([logger.name for logger in field_obj.loggers])
+    logger_list = list(dict.fromkeys(logger_list))  # unique while preserving order
     if callback_id == 'field_select_change_soil':
         soil_types = ['Sand (10-5)', 'Loamy Sand (12-5)', 'Sandy Loam (18-8)', 'Sandy Clay Loam (27-17)',
                       'Loam (28-14)', 'Sandy Clay (36-25)', 'Silt Loam (31-11)', 'Silt (30-6)',
                       'Clay Loam (36-22)', 'Silty Clay Loam (38-22)', 'Silty Clay (41-27)', 'Clay (42-30)']
         logger_and_soil_list_menu(ack, respond, logger_list, soil_types)
 
-    elif callback_id == 'field_select_psi':
-        # psi_action_id = 'logger_select_psi'
-        blocks = logger_and_toggle_menu(logger_list)
-        response = {
-            "response_type": "in_channel",
-            "blocks": blocks
-        }
-        respond(response)
+    if callback_id == 'field_select_psi':
+        user_selections[user_id]['logger_select_psi'] = logger_list
+        blocks = logger_and_toggle_menu(logger_list, preselected=logger_list)
+        respond(blocks=blocks)
         # logger_and_toggle_menu(ack, respond, logger_list)
     elif callback_id == 'field_select_prev_day':
         logger_and_dates_menu(ack, respond, logger_list)
@@ -450,6 +453,30 @@ def change_soil_menu(ack, respond, grower_names):
 def field_list_menu(ack, respond, field_list, action_id):
     ack()
 
+    # If PSI toggle flow, use Block Kit multi-select for multiple fields
+    if action_id == 'field_select_psi':
+        blocks = [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "Choose field(s) to modify PSI"
+                },
+                "accessory": {
+                    "type": "multi_static_select",
+                    "placeholder": {
+                        "type": "plain_text",
+                        "text": "Select field(s)",
+                        "emoji": True
+                    },
+                    "options": generate_options(field_list),
+                    "action_id": action_id
+                }
+            }
+        ]
+        respond(blocks=blocks)
+        return
+
     response = {
         "response_type": "in_channel",
         "text": "Choose Grower Field",
@@ -502,10 +529,10 @@ def logger_and_soil_list_menu(ack, respond, logger_list, soil_types):
     respond(blocks=blocks)
 
 
-def logger_and_toggle_menu(logger_list):
+def logger_and_toggle_menu(logger_list, preselected=None, selected_state=None):
     # Define the logger block
     logger_action_id = 'logger_select_psi'
-    logger_block = logger_select_block(logger_list, logger_action_id)
+    logger_block = logger_select_block(logger_list, logger_action_id, initial_selected=preselected)
 
     # Define the toggle block for PSI On/Off
     toggle_block = [
@@ -523,7 +550,7 @@ def logger_and_toggle_menu(logger_list):
                 },
                 "action_id": "psi_on",
                 "value": "on",
-                "style": "primary"
+                "style": "primary" if selected_state == 'on' else "default"
             }
         },
         {
@@ -540,7 +567,7 @@ def logger_and_toggle_menu(logger_list):
                 },
                 "action_id": "psi_off",
                 "value": "off",
-                "style": "danger"
+                "style": "danger" if selected_state == 'off' else "default"
             }
         }
     ]
@@ -654,7 +681,7 @@ def logger_and_dates_menu(ack, respond, logger_list):
         print(f"Error in respond function: {e}")
 
 
-def logger_select_block(logger_list, action_id):
+def logger_select_block(logger_list, action_id, initial_selected=None):
     return {
         "type": "section",
         "text": {
@@ -669,7 +696,8 @@ def logger_select_block(logger_list, action_id):
                 "emoji": True
             },
             "options": generate_options(logger_list),
-            "action_id": action_id
+            "action_id": action_id,
+            **({"initial_options": [opt for opt in generate_options(logger_list) if opt['value'] in initial_selected]} if initial_selected else {})
         }
     }
 
