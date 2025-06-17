@@ -326,50 +326,54 @@ def handle_soil_and_psi_selections(ack, body, respond):
 def handle_toggle_psi(ack, body, respond):
     ack()
     user_id = body['user']['id']
-    action_id = ''
-    if 'action_id' in body['actions'][0]:
-        action_id = body['actions'][0]['action_id']
+    action = body['actions'][0]
+    action_id = action.get('action_id', '')
 
-    if action_id == 'logger_select_psi':  # logger_select
-        selected_options = body['actions'][0]['selected_options']
-        user_selections[user_id][action_id] = [option['value'] for option in selected_options]
-    elif action_id in ['psi_on', 'psi_off']:  # on or off
-        user_selections[user_id][action_id] = body['actions'][0]['value']
-        # Update UI to reflect selection
+    # Handle logger selection
+    if action_id == 'logger_select_psi':
+        selected_loggers = [opt['value'] for opt in action['selected_options']]
+        user_selections[user_id]['logger_select_psi'] = selected_loggers
+
+    # Handle on/off button
+    elif action_id in ['psi_on', 'psi_off']:
+        user_selections[user_id][action_id] = action['value']
         logger_list = user_selections[user_id].get('logger_select_psi', [])
         selected_state = 'on' if action_id == 'psi_on' else 'off'
         blocks = logger_and_toggle_menu(logger_list, preselected=logger_list, selected_state=selected_state)
         respond(blocks=blocks, replace_original=True)
+
+    # Handle confirm
     elif action_id == 'psi_confirm':
-        user_selections[user_id][action_id] = True
+        user_selections[user_id]['psi_confirm'] = True
 
-    if 'logger_select_psi' in user_selections[user_id] and (
-            'psi_on' in user_selections[user_id] or 'psi_off' in user_selections[user_id]) and 'psi_confirm' in user_selections[user_id]:
-        loggers = user_selections[user_id]['logger_select_psi']
-        field = user_selections[user_id]['field']
+    # If all required selections are made, process the PSI toggle
+    if all(k in user_selections[user_id] for k in ['logger_select_psi', 'psi_confirm']) and \
+       ('psi_on' in user_selections[user_id] or 'psi_off' in user_selections[user_id]):
+
         grower = user_selections[user_id]['grower']
+        field = user_selections[user_id]['field']
         grower_name = grower.name
-        on_or_off = 'on'
-        if 'psi_on' in user_selections[user_id]:
-            on_or_off = user_selections[user_id]['psi_on']
-        elif 'psi_off' in user_selections[user_id]:
-            on_or_off = user_selections[user_id]['psi_off']
+        logger_list = user_selections[user_id]['logger_select_psi']
+        on_or_off = user_selections[user_id].get('psi_on') or user_selections[user_id].get('psi_off')
 
-        response_text = ''
+        # Load pickle data and toggle PSI
         growers = SharedPickle.open_pickle()
-        for field in fields:
-            for logger in loggers:
-                response_text += toggle_psi(grower_name, field, logger, on_or_off, growers)
+        response_text = ''
+        for logger in logger_list:
+            response_text += toggle_psi(grower_name, field, logger, on_or_off, growers)
+
         respond(text=response_text)
 
-        # Log the request to Google Sheets
-        request_name = 'Toggle PSI'
-        info = f'{field} {loggers} {on_or_off}'
-        username = body['user']['name']
-        SheetsHandler.log_request_to_sheet(request_name, username, info)
+        # Log request
+        SheetsHandler.log_request_to_sheet(
+            request_name='Toggle PSI',
+            user=body['user']['name'],
+            info=f'{field} {logger_list} {on_or_off}'
+        )
 
-        # Clear the selections for this user
+        # Clean up state
         del user_selections[user_id]
+
 
 
 @app.action("logger_select_prev_day")
@@ -669,7 +673,7 @@ def handle_modify_confirm(ack, body, respond):
         field = user_selections[user_id]['fields'][0]
 
         for logger_name in loggers:
-            write_logger_value_to_db(
+            SQLScripts.write_logger_value_to_db(
                 grower=grower,
                 field=field,
                 logger=logger_name,
@@ -686,7 +690,6 @@ def handle_modify_confirm(ack, body, respond):
 def fix_ampersand(text):
     return text.replace('&amp;', '&')
 
-{{ ... }}
 
 @app.action("grower_select_psi")
 @app.action("grower_select_change_soil")
@@ -814,8 +817,6 @@ def field_list_menu(ack, respond, field_list, action_id):
     ]
     
     respond(blocks=blocks)
-
-    respond(response)
 
 
 def logger_and_soil_list_menu(ack, respond, logger_list, soil_types):
