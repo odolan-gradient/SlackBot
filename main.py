@@ -433,7 +433,7 @@ def handle_field_select(ack, body, respond):
     action_data = body['actions'][0]
     action_id = action_data.get('action_id', action_data.get('name'))
     callback_id = action_id
-    selected_value = action_data['value']
+    selected_value = action_data['selected_options'][0]['value']
     fields_selected = [fix_ampersand(selected_value)]
     user_id = body['user']['id']
     user_selections[user_id]['fields'] = fields_selected
