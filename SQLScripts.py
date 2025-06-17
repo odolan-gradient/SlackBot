@@ -1752,20 +1752,13 @@ def sum_db_total_for_column_for_list_of_fields(pickle_name: str, pickle_director
 
 
 def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str, new_soil_type: str):
-    """
-    Single function to change the soil type for a logger in both the pickle and the db
+    """Single function to change the soil type for a logger in both the pickle and the db
 
     :param logger_name:
     :param field_name:
     :param grower_name:
     :param new_soil_type:
     """
-    print(f'Changing soil type for logger: {logger_name} to {new_soil_type}')
-
-    growers = Decagon.open_pickle()
-    dbw = DBWriter()
-
-    # Change soil type in the pickle
     print('-Changing soil type in the pickle')
     for grower in growers:
         if grower.name == grower_name:
@@ -1779,21 +1772,44 @@ def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str,
                             field_capacity = logger.soil.field_capacity
                             wilting_point = logger.soil.wilting_point
                             crop_type = logger.crop_type
-    Decagon.write_pickle(growers)
+    SharedPickle.write_pickle(growers)
     print('\tDone with pickle')
 
     # Change soil type parameters in the DB
-    print('-Changing soil type in the db')
-    field_name_db = dbw.remove_unwanted_chars_for_db_dataset(field_name)
-    db_project = dbw.get_db_project(crop_type)
-    dml = (f'UPDATE `{db_project}.{field_name_db}.{logger_name}` '
-           f'SET field_capacity = {field_capacity}, wilting_point = {wilting_point} '
-           f'WHERE TRUE')
-    result = dbw.run_dml(dml)
-    print(f'\tDone with DB')
-    print()
-    print(f'Soil type for {logger_name} changed from {old_soil_type} to {new_soil_type}')
-    print()
+    if crop_type:
+        print('-Changing soil type in the db')
+        field_name_db = dbw.remove_unwanted_chars_for_db_dataset(field_name)
+        db_project = dbw.get_db_project(crop_type)
+        dml = (f'UPDATE `{db_project}.{field_name_db}.{logger_name}` '
+               f'SET field_capacity = {field_capacity}, wilting_point = {wilting_point} '
+               f'WHERE TRUE')
+        result = dbw.run_dml(dml)
+        print(f'\tDone with DB')
+        print()
+        print(f'Soil type for {logger_name} changed from {old_soil_type} to {new_soil_type}')
+        print()
+    else:
+        print('Error: problem finding logger')
+
+def write_logger_value_to_db(grower, field, logger, date, attribute, new_value):
+    """Update a specific attribute value for a logger on a given date."""
+    from db_writer import DBWriter
+    dbwriter = DBWriter()
+    
+    # Clean field name for database
+    field_name_db = dbwriter.remove_unwanted_chars_for_db_dataset(field)
+    
+    # Get the database project for this crop type
+    db_project = dbwriter.get_db_project(SharedPickle.get_field(field).crop_type)
+    
+    # Build and execute the update query
+    query = f"""
+        UPDATE `{db_project}.{field_name_db}.{logger}`
+        SET {attribute} = {new_value}
+        WHERE date = '{date}'
+    """
+    dbwriter.run_dml(query)
+    return True
 
 
 def get_values_for_date(project, field_name, logger_name, date):

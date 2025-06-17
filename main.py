@@ -38,7 +38,7 @@ def main_menu_command(ack, body, respond):
         ack()
         if body['user_id'] in ['U06NJRAT1T2', 'U4KFKMH8C']:
             menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Delete PSI values', 'Show Pickle', 'Use Previous Days VWC',
-                            'Add Grower Billing', 'Get Field Location']
+                            'Modify Values', 'Add Grower Billing', 'Get Field Location']
         else:
             menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Delete PSI values', 'Show Pickle', 'Add Grower Billing', 'Get Field Location']
         main_menu(ack, respond, menu_options)
@@ -59,7 +59,6 @@ def generate_options(list_of_items):
     ]
 
 
-
 # ---------------- Delete PSI helper & menus -----------------
 
 def logger_delete_menu(logger_list, preselected=None):
@@ -78,6 +77,7 @@ def logger_delete_menu(logger_list, preselected=None):
         ]
     }
     return [logger_block, confirm_block]
+
 
 # existing helper below
 # ---------------- Delete PSI helper -----------------
@@ -427,8 +427,117 @@ def handle_prev_day_selections(ack, body, respond):
 @app.action("field_select_psi")
 @app.action("field_select_delete_psi")
 @app.action("field_select_prev_day")
+@app.action("field_select_modify_values")
 def handle_field_select(ack, body, respond):
     ack()
+    # Extract values from the actions
+    action_data = body['actions'][0]
+    action_id = action_data.get('action_id', action_data.get('name'))
+    callback_id = action_id
+    selected_value = action_data['selected_options'][0]['value']
+    fields_selected = [fix_ampersand(selected_value)]
+    user_id = body['user']['id']
+    user_selections[user_id]['fields'] = fields_selected
+
+    # Build combined logger list from all selected fields
+    logger_list = []
+    for fname in fields_selected:
+        field_obj = SharedPickle.get_field(fname)
+        logger_list.extend([logger.name for logger in field_obj.loggers])
+    logger_list = list(dict.fromkeys(logger_list))  # unique while preserving order
+
+    # Show logger menu based on callback_id
+    if callback_id == 'field_select_change_soil':
+        soil_types = ['Sand (10-5)', 'Loamy Sand (12-5)', 'Sandy Loam (18-8)', 'Sandy Clay Loam (27-17)',
+                      'Loam (28-14)', 'Sandy Clay (36-25)', 'Silt Loam (31-11)', 'Silt (30-6)',
+                      'Clay Loam (36-22)', 'Silty Clay Loam (38-22)', 'Silty Clay (41-27)', 'Clay (42-30)']
+        logger_and_soil_list_menu(ack, respond, logger_list, soil_types)
+
+    elif callback_id == 'field_select_psi':
+        user_selections[user_id]['logger_select_psi'] = logger_list
+        blocks = logger_and_toggle_menu(logger_list, preselected=logger_list)
+        respond(blocks=blocks)
+
+    elif callback_id == 'field_select_delete_psi':
+        user_selections[user_id]['logger_select_delete_psi'] = logger_list
+        blocks = logger_delete_menu(logger_list, preselected=logger_list)
+        respond(blocks=blocks)
+
+    elif callback_id == 'field_select_prev_day':
+        logger_and_dates_menu(ack, respond, logger_list)
+
+    elif callback_id == 'field_select_modify_values':
+        user_selections[user_id]['logger_select_modify_values'] = logger_list
+        blocks = logger_select_block(logger_list, action_id)
+        respond(blocks=blocks)
+
+@app.action("attribute_select")
+def handle_attribute_select(ack, body, respond):
+    ack()
+    selected_attribute = body['actions'][0]['selected_options'][0]['value']
+    user_id = body['user']['id']
+    
+    # Create input block for the value
+    blocks = [
+        {
+            "type": "input",
+            "element": {
+                "type": "plain_text_input",
+                "action_id": "value_input"
+            },
+            "label": {
+                "type": "plain_text",
+                "text": f"Enter new value for {selected_attribute}",
+                "emoji": True
+            }
+        },
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "Submit",
+                        "emoji": True
+                    },
+                    "value": selected_attribute,
+                    "action_id": "submit_value"
+                }
+            ]
+        }
+    ]
+    respond(blocks=blocks)
+
+@app.action("submit_value")
+def handle_submit_value(ack, body, respond):
+    ack()
+    selected_attribute = body['actions'][0]['value']
+    new_value = body['state']['values']['value_input']['value']
+    user_id = body['user']['id']
+    
+    # Get the selected logger and date range from user selections
+    logger_name = user_selections[user_id]['logger_select_modify_values']
+    start_date = user_selections[user_id]['start_date']
+    end_date = user_selections[user_id]['end_date']
+    
+    # TODO: Add code to update the value in the database
+    # This will require creating a new function in SQLScripts.py
+    
+    response_text = f"Updating {selected_attribute} to {new_value} for logger {logger_name} from {start_date} to {end_date}"
+    respond(text=response_text)
+    
+    # Clear the selections for this user
+    del user_selections[user_id]
+
+    # Extract values from the actions
+    action_data = body['actions'][0]
+    action_id = action_data.get('action_id', action_data.get('name'))
+    callback_id = action_id
+    selected_value = action_data['selected_options'][0]['value']
+    fields_selected = [fix_ampersand(selected_value)]
+    user_id = body['user']['id']
+    user_selections[user_id]['fields'] = fields_selected
     # Extract values from the actions
     action_data = body['actions'][0]
     action_id = action_data.get('action_id', action_data.get('name'))
@@ -465,10 +574,119 @@ def handle_field_select(ack, body, respond):
     elif callback_id == 'field_select_prev_day':
         logger_and_dates_menu(ack, respond, logger_list)
 
+    elif callback_id == 'field_select_modify_values':
+        modify_value_selector_menu(respond, logger_list)
+
+
+def get_selected_value(state, block_id, action_id):
+    """Helper function to get selected value from state."""
+    return state[block_id][action_id]['selected_option']['value']
+
+def get_selected_values(state, action_id):
+    """Helper function to get multiple selected values from state."""
+    for block in state.values():
+        if action_id in block:
+            return [opt['value'] for opt in block[action_id]['selected_options']]
+    return []
+
+def modify_value_selector_menu(respond, logger_list):
+    """Show menu for selecting attribute to modify."""
+    attributes = [
+        "logger_id", "date", "time", "canopy_temperature", "ambient_temperature", "vpd",
+        "vwc_1", "vwc_2", "vwc_3", "field_capacity", "wilting_point", "daily_gallons",
+        "daily_switch", "daily_hours", "daily_pressure", "daily_inches", "psi",
+        "psi_threshold", "psi_critical", "sdd", "rh", "eto", "kc", "etc", "et_hours"
+    ]
+
+    blocks = [
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "Choose loggers to modify"},
+            "accessory": {
+                "type": "multi_static_select",
+                "action_id": "logger_select_modify_values",
+                "placeholder": {"type": "plain_text", "text": "Select loggers"},
+                "options": generate_options(logger_list)
+            }
+        },
+        {
+            "type": "input",
+            "block_id": "attribute_select_block",
+            "label": {"type": "plain_text", "text": "Select attribute to modify"},
+            "element": {
+                "type": "static_select",
+                "action_id": "attribute_select_modify",
+                "placeholder": {"type": "plain_text", "text": "Choose an attribute"},
+                "options": generate_options(attributes)
+            }
+        },
+        {
+            "type": "input",
+            "block_id": "value_input_block",
+            "label": {"type": "plain_text", "text": "New value"},
+            "element": {
+                "type": "plain_text_input",
+                "action_id": "value_input"
+            }
+        },
+        {
+            "type": "input",
+            "block_id": "date_picker_block",
+            "label": {"type": "plain_text", "text": "Pick date to apply this value"},
+            "element": {
+                "type": "datepicker",
+                "action_id": "modify_date_select"
+            }
+        },
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "Confirm"},
+                    "style": "primary",
+                    "action_id": "modify_confirm",
+                    "value": "modify"
+                }
+            ]
+        }
+    ]
+    respond(blocks=blocks)
+
+@app.action("modify_confirm")
+def handle_modify_confirm(ack, body, respond):
+    ack()
+    user_id = body['user']['id']
+    state = body['state']['values']
+
+    try:
+        loggers = get_selected_values(state, "logger_select_modify_values")
+        attribute = get_selected_value(state, "attribute_select_block", "attribute_select_modify")
+        new_value = state["value_input_block"]["value_input"]["value"]
+        selected_date = state["date_picker_block"]["modify_date_select"]["selected_date"]
+
+        grower = user_selections[user_id]['grower']
+        field = user_selections[user_id]['fields'][0]
+
+        for logger_name in loggers:
+            write_logger_value_to_db(
+                grower=grower,
+                field=field,
+                logger=logger_name,
+                date=selected_date,
+                attribute=attribute,
+                new_value=new_value
+            )
+
+        respond(f"✅ Updated `{attribute}` to `{new_value}` for {len(loggers)} logger(s) on {selected_date}")
+    except Exception as e:
+        respond(f"❌ Failed to apply modification: {str(e)}")
+
 
 def fix_ampersand(text):
     return text.replace('&amp;', '&')
 
+{{ ... }}
 
 @app.action("grower_select_psi")
 @app.action("grower_select_change_soil")
@@ -476,6 +694,7 @@ def fix_ampersand(text):
 @app.action("grower_select_delete_psi")
 @app.action("grower_select_prev_day")
 @app.action("grower_select_billing")
+@app.action("grower_select_modify_values")
 def handle_grower_menu(ack, body, client, respond):
     ack()
 
@@ -507,6 +726,10 @@ def handle_grower_menu(ack, body, client, respond):
 
     elif grower_action_id == 'grower_select_prev_day':
         action_id = 'field_select_prev_day'
+        field_list_menu(ack, respond, field_list, action_id)
+
+    elif grower_action_id == 'grower_select_modify_values':
+        action_id = 'field_select_modify_values'
         field_list_menu(ack, respond, field_list, action_id)
 
     # elif grower_action_id == 'grower_select_billing':
@@ -568,52 +791,29 @@ def change_soil_menu(ack, respond, grower_names):
 
 def field_list_menu(ack, respond, field_list, action_id):
     ack()
-
-    # If PSI toggle flow, use Block Kit multi-select for multiple fields
-    if action_id in ['field_select_psi', 'field_select_delete_psi']:
-        blocks = [
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": "Choose field(s) to modify PSI"
-                },
-                "accessory": {
-                    "type": "multi_static_select",
-                    "placeholder": {
-                        "type": "plain_text",
-                        "text": "Select field(s)",
-                        "emoji": True
-                    },
-                    "options": generate_options(field_list),
-                    "action_id": action_id
-                }
-            }
-        ]
-        respond(blocks=blocks)
-        return
-
-    response = {
-        "response_type": "in_channel",
-        "text": "Choose Grower Field",
-        "attachments": [
-            {
-                "text": "Choose Grower Field",
-                "fallback": "You are unable to choose an option",
-                "color": "#3AA3E3",
-                "attachment_type": "default",
-                "callback_id": action_id,
-                "actions": [
-                    {
-                        "name": "field_list",
-                        "text": "Pick a field...",
-                        "type": "select",
-                        "options": generate_options(field_list)
-                    }
-                ]
+    
+    # Use Block Kit for all cases
+    blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "Choose a field"
             },
-        ]
-    }
+            "accessory": {
+                "type": "static_select" if action_id not in ['field_select_psi', 'field_select_delete_psi'] else "multi_static_select",
+                "placeholder": {
+                    "type": "plain_text",
+                    "text": "Select a field" if action_id not in ['field_select_psi', 'field_select_delete_psi'] else "Select field(s)",
+                    "emoji": True
+                },
+                "options": generate_options(field_list),
+                "action_id": action_id
+            }
+        }
+    ]
+    
+    respond(blocks=blocks)
 
     respond(response)
 
