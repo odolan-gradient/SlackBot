@@ -430,10 +430,11 @@ def handle_prev_day_selections(ack, body, respond):
 def handle_field_select(ack, body, respond):
     ack()
     # Extract values from the actions
-    action_id = body['actions'][0]['action_id']
+    action_data = body['actions'][0]
+    action_id = action_data.get('action_id', action_data.get('name'))
     callback_id = action_id
-    selected_options = body['actions'][0]['selected_options']
-    fields_selected = [fix_ampersand(opt['value']) for opt in selected_options]
+    selected_value = action_data['value']
+    fields_selected = [fix_ampersand(selected_value)]
     user_id = body['user']['id']
     user_selections[user_id]['fields'] = fields_selected
 
