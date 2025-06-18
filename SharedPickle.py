@@ -15,7 +15,9 @@ from pathlib import Path, PosixPath, PureWindowsPath
 from flask import Flask, jsonify
 from datetime import date, datetime, timedelta
 from xml.etree import ElementTree as ET
-import SheetsHandler
+from shapely.geometry import Point, Polygon
+import time
+
 
 try:
     from pathlib import WindowsPath
@@ -85,8 +87,6 @@ def get_drive_service():
     return service
 
 
-service = get_drive_service()
-
 
 class CustomUnpickler(pickle.Unpickler):
     def find_class(self, module, name):
@@ -110,8 +110,9 @@ def convert_to_pure_windows_path(obj):
     return obj
 
 
-def open_pickle(file_id=PICKLE_FILE_ID, service=service):
+def open_pickle(file_id=PICKLE_FILE_ID):
     try:
+        service = get_drive_service()
         # Get latest version ID first
         metadata = service.files().get(
             fileId=file_id,
@@ -147,8 +148,9 @@ def open_pickle(file_id=PICKLE_FILE_ID, service=service):
         return None
 
 
-def write_pickle(data, file_id=PICKLE_FILE_ID, service=service):
+def write_pickle(data, file_id=PICKLE_FILE_ID):
     try:
+        service = get_drive_service()
         # Convert Path objects to PureWindowsPath before writing
         data = convert_to_pure_windows_path(data)
 
@@ -189,6 +191,7 @@ def check_if_pickle_valid(metadata):
 def list_files():
     # List all files that the service account has access to
     try:
+        service = get_drive_service()
         results = service.files().list(
             pageSize=10, fields="nextPageToken, files(id, name)", supportsAllDrives=True,
             includeItemsFromAllDrives=True).execute()
@@ -205,6 +208,7 @@ def list_files():
 
 def list_shared_drive_files(drive_id=SHARED_DRIVE_ID):
     try:
+        service = get_drive_service()
         # List files in the shared drive
         results = service.files().list(
             corpora='drive',
@@ -274,6 +278,25 @@ def get_field(field_name: str, grower_name: str = ''):
                     return field
 
 
+def get_fields(field_names: list[str], growers: list = None):
+    """
+    Given a list of field names, return the matching Field objects,
+    looking only once at the pickle data.
+    """
+    if growers is None:
+        growers = open_pickle()
+    name_set = set(field_names)
+    result = []
+    for g in growers:
+        for f in g.fields:
+            if f.name in name_set:
+                result.append(f)
+                name_set.remove(f.name)
+                if not name_set:
+                    return result
+    return result
+
+
 def get_project(field_name: str, grower_name: str = ''):
     """
     Function to get a fields project
@@ -330,7 +353,7 @@ def get_coords_from_kml_folder(field_number, folder_id="12sNfi4L4BUwQM0JYx84tXaf
     :param service: Google Drive API service instance
     :return: tuple (lat, lon) or None if not found
     """
-
+    service = get_drive_service()
     files = list_all_kml_files(folder_id, service)
 
     for file in files:
@@ -357,6 +380,58 @@ def get_coords_from_kml_folder(field_number, folder_id="12sNfi4L4BUwQM0JYx84tXaf
 
     return None
 
+def get_kml_from_coordinate(lat, lon, folder_id="12sNfi4L4BUwQM0JYx84tXafNp_Hur9P6"):
+    """
+    Searches through KML files in a Google Drive folder and returns any KML file
+    whose polygon contains the provided (lat, lon) coordinate.
+
+    :param lat: float - latitude
+    :param lon: float - longitude
+    :param folder_id: str - Google Drive folder ID
+    :param service: Google Drive API service instance
+    :return: list of matching filenames or empty list if none found
+    """
+    service = get_drive_service()
+    files = list_all_kml_files(folder_id, service)
+    point = Point(float(lon), float(lat))  # KML uses (lon, lat)
+    matching_files = []
+
+    for file in files:
+        request = service.files().get_media(fileId=file['id'], supportsAllDrives=True)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+
+        fh.seek(0)
+        try:
+            tree = ET.parse(fh)
+            root = tree.getroot()
+            ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+
+            for placemark in root.findall('.//kml:Placemark', ns):
+                for coords in placemark.findall('.//kml:coordinates', ns):
+                    coords_text = coords.text.strip()
+                    coord_pairs = coords_text.split()
+                    polygon_points = []
+
+                    for pair in coord_pairs:
+                        parts = pair.split(',')
+                        if len(parts) >= 2:
+                            lon_i, lat_i = map(float, parts[:2])
+                            polygon_points.append((lon_i, lat_i))
+
+                    if len(polygon_points) >= 3:
+                        polygon = Polygon(polygon_points)
+                        if polygon.contains(point):
+                            matching_files.append(file['name'])
+                            break  # stop checking this file after first match
+        except Exception as e:
+            print(f"Failed to parse {file['name']}: {e}")
+
+    return matching_files
 
 # Example usage in your Slack bot
 def slack_bot(request):
@@ -383,3 +458,4 @@ def scheduled_task(request):
 # list_shared_drive_files()
 # show_pickle()
 # get_coords_from_kml_folder('1416')
+# get_kml_from_coordinate(36.862627, -120.607836)

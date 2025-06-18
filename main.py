@@ -38,9 +38,12 @@ def main_menu_command(ack, body, respond):
     try:
         ack()
         # U06NJRAT1T2 Ollie
-        if body['user_id'] in ['U06NJRAT1T2', 'U4KFKMH8C']:
+        # Javi 'U4KFKMH8C'
+        if body['user_id'] in ['U4KFKMH8C']:
             menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Show Pickle', 'Use Previous Days VWC', 'Add Grower Billing', 'Get Field Location']
-        elif body['user_id'] in ['U06NJRAT1T2']: # just Ollie
+
+        # just Ollie
+        elif body['user_id'] in ['U06NJRAT1T2']:
             menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Delete PSI values', 'Show Pickle', 'Use Previous Days VWC',
                             'Modify Values', 'Add Grower Billing', 'Get Field Location']
         else:
@@ -63,102 +66,69 @@ def generate_options(list_of_items):
     ]
 
 
-# ---------------- Delete PSI helper & menus -----------------
+# def delete_psi_values_for_specific_logger(grower_name, field_name, logger_name):
+#     growers = SharedPickle.open_pickle()
+#     dbw = DBWriter.DBWriter()
+#     project = SharedPickle.get_project(field_name, grower_name)
+#     field_dataset = dbw.remove_unwanted_chars_for_db_dataset(field_name)
+#     dml = (f"UPDATE `{project}.{field_dataset}.{logger_name}` SET psi = NULL, sdd = NULL, canopy_temperature = NULL WHERE TRUE")
+#     try:
+#         dbw.run_dml(dml, project=project)
+#         # update pickle
+#         for grower in growers:
+#             if grower.name == grower_name:
+#                 for field in grower.fields:
+#                     if field.name == field_name:
+#                         for logger in field.loggers:
+#                             if logger.name == logger_name:
+#                                 logger.ir_active = False
+#                                 logger.consecutive_ir_values = deque()
+#         SharedPickle.write_pickle(growers)
+#         return f"Cleared PSI for {logger_name} in {field_name}"
+#     except Exception as e:
+#         return f"Error clearing {logger_name}: {e}"
 
-def logger_delete_menu(logger_list, preselected=None):
-    logger_action_id = 'logger_select_delete_psi'
-    logger_block = logger_select_block(logger_list, logger_action_id, initial_selected=preselected)
-    confirm_block = {
-        "type": "actions",
-        "elements": [
-            {
-                "type": "button",
-                "text": {"type": "plain_text", "text": "Confirm Delete"},
-                "style": "danger",
-                "action_id": "delete_confirm",
-                "value": "confirm"
-            }
-        ]
-    }
-    return [logger_block, confirm_block]
-
-
-# existing helper below
-# ---------------- Delete PSI helper -----------------
-
-def delete_psi_values_for_field(grower_name, field_name):
-    """Set psi, sdd and canopy_temperature to NULL for every logger in the field."""
+def bulk_delete_psi(grower_name: str, fields: list[str], to_delete: list[str]) -> list[str]:
+    """
+    Clears psi/sdd/canopy_temperature for the given grower across all specified fields/loggers.
+    Opens the pickle once, writes it once, and runs all DMLs in one go.
+    Returns a list of status messages.
+    """
     growers = SharedPickle.open_pickle()
     dbw = DBWriter.DBWriter()
-    response_lines = []
-    project = SharedPickle.get_project(field_name, grower_name)
-    for grower in growers:
-        if grower.name != grower_name:
+    get_project = SharedPickle.get_project
+
+    results: list[str] = []
+    # iterate growers → fields → loggers
+    for g in growers:
+        if g.name != grower_name:
             continue
-        for field in grower.fields:
-            if field.name != field_name:
+        for field in g.fields:
+            if field.name not in fields:
                 continue
-            field_dataset = dbw.remove_unwanted_chars_for_db_dataset(field.name)
-            for logger in field.loggers:
-                table_name = logger.name
-                dml = (f"UPDATE `{project}.{field_dataset}.{table_name}` "
-                       f"SET psi = NULL, sdd = NULL, canopy_temperature = NULL WHERE TRUE")
+            dataset = dbw.remove_unwanted_chars_for_db_dataset(field.name)
+            project = get_project(field.name, grower_name)
+            for lg in field.loggers:
+                if lg.name not in to_delete:
+                    continue
+                table = lg.name
+                dml = (
+                    f"UPDATE `{project}.{dataset}.{table}` "
+                    "SET psi = NULL, sdd = NULL, canopy_temperature = NULL WHERE TRUE"
+                )
+                print(dml)
                 try:
                     dbw.run_dml(dml, project=project)
-                    response_lines.append(f"Cleared PSI for {logger.name} in {field_name}")
+                    # update in-memory pickle object
+                    lg.ir_active = False
+                    lg.consecutive_ir_values = deque()
+                    results.append(f"Cleared PSI for {table} in {field.name}")
                 except Exception as e:
-                    response_lines.append(f"Error clearing {logger.name}: {e}")
-    return '\n'.join(response_lines)
+                    results.append(f"❌ Error clearing {table}: {e}")
 
-# ----------------------------------------------------
+    SharedPickle.write_pickle(growers)
+    return results
 
-@app.action("logger_select_delete_psi")
-@app.action("delete_confirm")
-def handle_delete_psi(ack, body, respond):
-    ack()
-    user_id = body['user']['id']
-    action_id = body['actions'][0]['action_id']
-    if action_id == 'logger_select_delete_psi':
-        selected_options = body['actions'][0]['selected_options']
-        user_selections[user_id][action_id] = [opt['value'] for opt in selected_options]
-    elif action_id == 'delete_confirm':
-        user_selections[user_id][action_id] = True
-
-    if 'logger_select_delete_psi' in user_selections[user_id] and 'delete_confirm' in user_selections[user_id]:
-        grower = user_selections[user_id]['grower']
-        fields = user_selections[user_id]['fields']
-        loggers = user_selections[user_id]['logger_select_delete_psi']
-        responses = []
-        for field_name in fields:
-            for logger in loggers:
-                resp = delete_psi_values_for_specific_logger(grower.name, field_name, logger)
-                responses.append(resp)
-        respond(text='\n'.join(responses))
-        SheetsHandler.log_request_to_sheet('Delete PSI Values', body['user']['name'], ', '.join(loggers))
-        del user_selections[user_id]
-
-
-def delete_psi_values_for_specific_logger(grower_name, field_name, logger_name):
-    growers = SharedPickle.open_pickle()
-    dbw = DBWriter.DBWriter()
-    project = SharedPickle.get_project(field_name, grower_name)
-    field_dataset = dbw.remove_unwanted_chars_for_db_dataset(field_name)
-    dml = (f"UPDATE `{project}.{field_dataset}.{logger_name}` SET psi = NULL, sdd = NULL, canopy_temperature = NULL WHERE TRUE")
-    try:
-        dbw.run_dml(dml, project=project)
-        # update pickle
-        for grower in growers:
-            if grower.name == grower_name:
-                for field in grower.fields:
-                    if field.name == field_name:
-                        for logger in field.loggers:
-                            if logger.name == logger_name:
-                                logger.ir_active = False
-                                logger.consecutive_ir_values = deque()
-        SharedPickle.write_pickle(growers)
-        return f"Cleared PSI for {logger_name} in {field_name}"
-    except Exception as e:
-        return f"Error clearing {logger_name}: {e}"
 
 # ----------------------------------------------------
 
@@ -354,29 +324,16 @@ def handle_toggle_psi(ack, body, respond):
     if all(k in user_selections[user_id] for k in ['logger_select_psi', 'psi_confirm']) and \
        ('psi_on' in user_selections[user_id] or 'psi_off' in user_selections[user_id]):
 
-        grower = user_selections[user_id]['grower']
-        field = user_selections[user_id]['field']
-        grower_name = grower.name
-        logger_list = user_selections[user_id]['logger_select_psi']
-        on_or_off = user_selections[user_id].get('psi_on') or user_selections[user_id].get('psi_off')
+        grower = user_selections[user_id]["grower"].name
+        fields = user_selections[user_id]["fields"]
+        loggers = user_selections[user_id]["logger_select_psi"]
+        on_off = user_selections[user_id].get("psi_on") or user_selections[user_id].get("psi_off")
 
-        # Load pickle data and toggle PSI
-        growers = SharedPickle.open_pickle()
-        response_text = ''
-        for logger in logger_list:
-            response_text += toggle_psi(grower_name, field, logger, on_or_off, growers)
-
-        respond(text=response_text)
-
-        # Log request
-        SheetsHandler.log_request_to_sheet(
-            request_name='Toggle PSI',
-            user=body['user']['name'],
-            info=f'{field} {logger_list} {on_or_off}'
-        )
-
-        # Clean up state
-        del user_selections[user_id]
+        # single pickle open/write, batch all toggles
+        msgs = bulk_toggle_psi(grower, fields, loggers, on_off)
+        respond(text="\n".join(msgs))
+        SheetsHandler.log_request_to_sheet("Toggle PSI", body["user"]["name"], f"{fields} → {loggers} → {on_off}")
+        user_selections.pop(user_id, None)
 
 
 
@@ -438,28 +395,39 @@ def handle_prev_day_selections(ack, body, respond):
 @app.action("field_select_modify_values")
 def handle_field_select(ack, body, respond):
     ack()
-
+    print('Handling Field Select')
     action = body['actions'][0]
     action_id = action['action_id']
     user_id = body['user']['id']
 
-    # Support both single-select and multi-select just in case
+    # Handle both single-select and multi-select cases
     if 'selected_option' in action:
-        field_value = action['selected_option']['value']
+        field_names = [fix_ampersand(action['selected_option']['value'])]
     elif 'selected_options' in action:
-        field_value = action['selected_options'][0]['value']
+        field_names = [fix_ampersand(opt['value']) for opt in action['selected_options']]
     else:
         respond("No field selected.")
         return
 
-    field = fix_ampersand(field_value)
-    user_selections[user_id]['field'] = field
+    # Save all selected fields
+    user_selections[user_id]['fields'] = field_names
 
-    field_obj = SharedPickle.get_field(field)
-    logger_list = [logger.name for logger in field_obj.loggers]
+    # Open the pickle once and get all requested Field objects
+    growers = SharedPickle.open_pickle()
+    fields = SharedPickle.get_fields(field_names, growers=growers)
+
+    # Build your flat logger list, extend makes it so its all one list instead of list of lists with each inner list being each fields loggers
+    logger_list = []
+    for f in fields:
+        logger_list.extend(l.name for l in f.loggers)
+    # dedupe (gets rid of any duplicates)
+    # dict.fromkeys makes a dict with the keys being the values of logger_list and their values set to None
+    # concise way to remove dups since dict cant have dup keys
+    logger_list = list(dict.fromkeys(logger_list))
 
     # Route based on action
     if action_id == 'field_select_change_soil':
+        print('\t Field Select Change Soil')
         soil_types = [
             'Sand (10-5)', 'Loamy Sand (12-5)', 'Sandy Loam (18-8)', 'Sandy Clay Loam (27-17)',
             'Loam (28-14)', 'Sandy Clay (36-25)', 'Silt Loam (31-11)', 'Silt (30-6)',
@@ -468,31 +436,26 @@ def handle_field_select(ack, body, respond):
         logger_and_soil_list_menu(ack, respond, logger_list, soil_types)
 
     elif action_id == 'field_select_psi':
+        print('\t Field Select PSI')
         user_selections[user_id]['logger_select_psi'] = logger_list
         blocks = logger_and_toggle_menu(logger_list, preselected=logger_list)
         respond(blocks=blocks)
 
-
     elif action_id == 'field_select_delete_psi':
+        print('\t Field Delete PSI')
         user_selections[user_id]['logger_select_delete_psi'] = logger_list
         blocks = logger_delete_menu(logger_list, preselected=logger_list)
         respond(blocks=blocks)
 
     elif action_id == 'field_select_prev_day':
+        print('\t Field Prev Day')
         logger_and_dates_menu(ack, respond, logger_list)
 
     elif action_id == 'field_select_modify_values':
+        print('\t Field Modify Values')
         user_selections[user_id]['logger_select_modify_values'] = logger_list
         blocks = logger_select_block(logger_list, action_id)
         respond(blocks=blocks)
-
-def safe_respond(respond, **kwargs):
-    try:
-        respond(**kwargs)
-    except SlackApiError as e:
-        print("Slack API error:", e.response["error"])
-    except Exception as e:
-        print("Other error:", e)
 
 @app.action("attribute_select")
 def handle_attribute_select(ack, body, respond):
@@ -600,6 +563,39 @@ def handle_submit_value(ack, body, respond):
     elif callback_id == 'field_select_modify_values':
         modify_value_selector_menu(respond, logger_list)
 
+@app.action("logger_select_delete_psi")
+@app.action("delete_confirm")
+def handle_delete_psi(ack, body, respond):
+    ack()
+    print('Handling delete psi')
+    user_id = body["user"]["id"]
+    action_id = body["actions"][0]["action_id"]
+
+    if action_id == "logger_select_delete_psi":
+        # step 1: user picked some loggers
+        selected = [opt["value"] for opt in body["actions"][0]["selected_options"]]
+        user_selections[user_id]["logger_select_delete_psi"] = selected
+        blocks = logger_delete_menu(selected, preselected=selected)
+        respond(blocks=blocks, replace_original=True)
+        return
+
+    # step 2: user confirmed
+    grower   = user_selections[user_id]["grower"].name
+    fields   = user_selections[user_id].get("fields", [])
+    to_delete = user_selections[user_id]["logger_select_delete_psi"]
+
+    # call our helper
+    results = bulk_delete_psi(grower, fields, to_delete)
+
+    # send back status & log
+    respond(text="\n".join(results))
+    SheetsHandler.log_request_to_sheet(
+        "Delete PSI Values",
+        body["user"]["name"],
+        f"{fields} → {to_delete}"
+    )
+    user_selections.pop(user_id, None)
+
 
 def get_selected_value(state, block_id, action_id):
     """Helper function to get selected value from state."""
@@ -611,6 +607,23 @@ def get_selected_values(state, action_id):
         if action_id in block:
             return [opt['value'] for opt in block[action_id]['selected_options']]
     return []
+
+def logger_delete_menu(logger_list, preselected=None):
+    logger_action_id = 'logger_select_delete_psi'
+    logger_block = logger_select_block(logger_list, logger_action_id, initial_selected=preselected)
+    confirm_block = {
+        "type": "actions",
+        "elements": [
+            {
+                "type": "button",
+                "text": {"type": "plain_text", "text": "Confirm Delete"},
+                "style": "danger",
+                "action_id": "delete_confirm",
+                "value": "confirm"
+            }
+        ]
+    }
+    return [logger_block, confirm_block]
 
 def modify_value_selector_menu(respond, logger_list):
     """Show menu for selecting attribute to modify."""
@@ -1277,22 +1290,54 @@ def turn_on_psi_menu(ack, respond, grower_names):
     respond(response)
 
 
-def toggle_psi(grower_name, field_name, logger_name, psi_toggle, growers):
-    response_text = ''
-    for grower in growers:
-        if grower.name == grower_name:
-            for field in grower.fields:
-                if field.name == field_name:
-                    for logger in field.loggers:
-                        if logger.name == logger_name:
-                            if psi_toggle == 'off':  # if On
-                                response_text += f'Turned Off IR for {logger.name}\n'
-                                logger.ir_active = False
-                            if psi_toggle == 'on':
-                                response_text += f'Turned On IR for {logger.name}\n'
-                                logger.ir_active = True
+# def toggle_psi(grower_name, field_names, logger_name, psi_toggle, growers):
+#     response_text = ''
+#     for grower in growers:
+#         if grower.name == grower_name:
+#             for field in grower.fields:
+#                 if field.name in field_names:
+#                     for logger in field.loggers:
+#                         if logger.name == logger_name:
+#                             if psi_toggle == 'off':  # if On
+#                                 response_text += f'Turned Off IR for {logger.name}\n'
+#                                 logger.ir_active = False
+#                             if psi_toggle == 'on':
+#                                 response_text += f'Turned On IR for {logger.name}\n'
+#                                 logger.ir_active = True
+#     SharedPickle.write_pickle(growers)
+#     return response_text
+def bulk_toggle_psi(
+    grower_name: str,
+    field_names: list[str] | str,
+    to_toggle: list[str],
+    on_or_off: str
+) -> list[str]:
+    """
+    Toggles IR (psi) for the given grower across all specified fields/loggers.
+    Opens the pickle once, applies all updates in-memory so to save us time, writes once,
+    and returns a list of status messages.
+    """
+    growers = SharedPickle.open_pickle()
+    messages: list[str] = []
+    # normalize fields to a list
+    fields = field_names if isinstance(field_names, (list, tuple)) else [field_names]
+
+    for g in growers:
+        if g.name != grower_name:
+            continue
+        for f in g.fields:
+            if f.name not in fields:
+                continue
+            for lg in f.loggers:
+                if lg.name not in to_toggle:
+                    continue
+                # flip the switch
+                lg.ir_active = (on_or_off == "on")
+                verb = "On" if on_or_off == "on" else "Off"
+                messages.append(f"Turned {verb} IR for {lg.name}")
+
     SharedPickle.write_pickle(growers)
-    return response_text
+    return messages
 
 
 def delete_psi_menu(ack, respond, grower_names):
@@ -1376,8 +1421,7 @@ if __name__ == "__main__":
 
 # if __name__ == "__main__":
 #     app.start(port=int(os.getenv("PORT", 3000)))
-# https://18cf-2605-59c0-21f0-fe10-5082-a925-7926-6b87.ngrok-free.app/slack/events
-# https://seal-app-er6sr.ondigitalocean.app/slack/events
+
 # interactivity is the one that determines the debug
 # https://us-central1-rich-meridian-430023-j1.cloudfunctions.net/slackBot/slack/events
 # https://seal-app-er6sr.ondigitalocean.app/slack/events
