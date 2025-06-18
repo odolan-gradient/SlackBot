@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from flask import Flask, request
 from slack_bolt import App
 from slack_bolt.adapter.flask import SlackRequestHandler
+from slack_sdk.errors import SlackApiError
 
 import DBWriter
 import SQLScripts
@@ -36,7 +37,10 @@ user_selections = defaultdict(dict)
 def main_menu_command(ack, body, respond):
     try:
         ack()
+        # U06NJRAT1T2 Ollie
         if body['user_id'] in ['U06NJRAT1T2', 'U4KFKMH8C']:
+            menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Show Pickle', 'Use Previous Days VWC', 'Add Grower Billing', 'Get Field Location']
+        elif body['user_id'] in ['U06NJRAT1T2']: # just Ollie
             menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Delete PSI values', 'Show Pickle', 'Use Previous Days VWC',
                             'Modify Values', 'Add Grower Billing', 'Get Field Location']
         else:
@@ -434,42 +438,61 @@ def handle_prev_day_selections(ack, body, respond):
 @app.action("field_select_modify_values")
 def handle_field_select(ack, body, respond):
     ack()
-    # Extract values from the actions
-    callback_id = body['callback_id']
-    field = body['actions'][0]['selected_options'][0]['value']
-    field = fix_ampersand(field)
-    respond(f"You selected field: {field}")
-    field_obj = SharedPickle.get_field(field)
 
-    # Add to selections
+    action = body['actions'][0]
+    action_id = action['action_id']
     user_id = body['user']['id']
+
+    # Support both single-select and multi-select just in case
+    if 'selected_option' in action:
+        field_value = action['selected_option']['value']
+    elif 'selected_options' in action:
+        field_value = action['selected_options'][0]['value']
+    else:
+        respond("No field selected.")
+        return
+
+    field = fix_ampersand(field_value)
     user_selections[user_id]['field'] = field
+
+    field_obj = SharedPickle.get_field(field)
     logger_list = [logger.name for logger in field_obj.loggers]
 
-    # Show logger menu based on callback_id
-    if callback_id == 'field_select_change_soil':
-        soil_types = ['Sand (10-5)', 'Loamy Sand (12-5)', 'Sandy Loam (18-8)', 'Sandy Clay Loam (27-17)',
-                      'Loam (28-14)', 'Sandy Clay (36-25)', 'Silt Loam (31-11)', 'Silt (30-6)',
-                      'Clay Loam (36-22)', 'Silty Clay Loam (38-22)', 'Silty Clay (41-27)', 'Clay (42-30)']
+    # Route based on action
+    if action_id == 'field_select_change_soil':
+        soil_types = [
+            'Sand (10-5)', 'Loamy Sand (12-5)', 'Sandy Loam (18-8)', 'Sandy Clay Loam (27-17)',
+            'Loam (28-14)', 'Sandy Clay (36-25)', 'Silt Loam (31-11)', 'Silt (30-6)',
+            'Clay Loam (36-22)', 'Silty Clay Loam (38-22)', 'Silty Clay (41-27)', 'Clay (42-30)'
+        ]
         logger_and_soil_list_menu(ack, respond, logger_list, soil_types)
 
-    elif callback_id == 'field_select_psi':
+    elif action_id == 'field_select_psi':
         user_selections[user_id]['logger_select_psi'] = logger_list
         blocks = logger_and_toggle_menu(logger_list, preselected=logger_list)
         respond(blocks=blocks)
 
-    elif callback_id == 'field_select_delete_psi':
+
+    elif action_id == 'field_select_delete_psi':
         user_selections[user_id]['logger_select_delete_psi'] = logger_list
         blocks = logger_delete_menu(logger_list, preselected=logger_list)
         respond(blocks=blocks)
 
-    elif callback_id == 'field_select_prev_day':
+    elif action_id == 'field_select_prev_day':
         logger_and_dates_menu(ack, respond, logger_list)
 
-    elif callback_id == 'field_select_modify_values':
+    elif action_id == 'field_select_modify_values':
         user_selections[user_id]['logger_select_modify_values'] = logger_list
         blocks = logger_select_block(logger_list, action_id)
         respond(blocks=blocks)
+
+def safe_respond(respond, **kwargs):
+    try:
+        respond(**kwargs)
+    except SlackApiError as e:
+        print("Slack API error:", e.response["error"])
+    except Exception as e:
+        print("Other error:", e)
 
 @app.action("attribute_select")
 def handle_attribute_select(ack, body, respond):
@@ -841,70 +864,56 @@ def logger_and_soil_list_menu(ack, respond, logger_list, soil_types):
 
     respond(blocks=blocks)
 
+def _button(text, action_id, value, style=None):
+    btn = {
+        "type": "button",
+        "text": {"type": "plain_text", "text": text},
+        "action_id": action_id,
+        "value": value
+    }
+    if style in ("primary", "danger"):
+        btn["style"] = style
+    return btn
+
 
 def logger_and_toggle_menu(logger_list, preselected=None, selected_state=None):
-    # Define the logger block
-    logger_action_id = 'logger_select_psi'
-    logger_block = logger_select_block(logger_list, logger_action_id, initial_selected=preselected)
+    logger_block = logger_select_block(
+        logger_list,
+        action_id="logger_select_psi",
+        initial_selected=preselected
+    )
 
-    # Define the toggle block for PSI On/Off
-    toggle_block = [
+    blocks = [
+        logger_block,
         {
             "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "Turn PSI On:"
-            },
-            "accessory": {
-                "type": "button",
-                "text": {
-                    "type": "plain_text",
-                    "text": "PSI On"
-                },
-                "action_id": "psi_on",
-                "value": "on",
-                "style": "primary" if selected_state == 'on' else "default"
-            }
+            "text": {"type": "mrkdwn", "text": "Turn PSI On:"},
+            "accessory": _button(
+                text="PSI On",
+                action_id="psi_on",
+                value="on",
+                style="primary" if selected_state == "on" else None
+            )
         },
         {
             "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "Turn PSI Off:"
-            },
-            "accessory": {
-                "type": "button",
-                "text": {
-                    "type": "plain_text",
-                    "text": "PSI Off"
-                },
-                "action_id": "psi_off",
-                "value": "off",
-                "style": "danger" if selected_state == 'off' else "default"
-            }
+            "text": {"type": "mrkdwn", "text": "Turn PSI Off:"},
+            "accessory": _button(
+                text="PSI Off",
+                action_id="psi_off",
+                value="off",
+                style="danger" if selected_state == "off" else None
+            )
+        },
+        {
+            "type": "actions",
+            "elements": [
+                _button("Confirm", "psi_confirm", "confirm", style="primary")
+            ]
         }
     ]
-
-    # Confirm button block
-    confirm_block = {
-        "type": "actions",
-        "elements": [
-            {
-                "type": "button",
-                "text": {
-                    "type": "plain_text",
-                    "text": "Confirm"
-                },
-                "style": "primary",
-                "action_id": "psi_confirm",
-                "value": "confirm"
-            }
-        ]
-    }
-
-    # Combine logger block, toggle block, and confirm block
-    blocks = [logger_block] + toggle_block + [confirm_block]
     return blocks
+
 
 
 def date_picker_block():
@@ -995,7 +1004,18 @@ def logger_and_dates_menu(ack, respond, logger_list):
 
 
 def logger_select_block(logger_list, action_id, initial_selected=None):
-    return {
+    # Generate the full list of options
+    options = generate_options(logger_list)
+
+    # Filter initial options to only include valid matches
+    initial_opts = []
+    if initial_selected:
+        valid_values = {opt['value'] for opt in options}
+        initial_opts = [
+            opt for opt in options if opt['value'] in initial_selected and opt['value'] in valid_values
+        ]
+
+    block = {
         "type": "section",
         "text": {
             "type": "mrkdwn",
@@ -1008,11 +1028,18 @@ def logger_select_block(logger_list, action_id, initial_selected=None):
                 "text": "Select logger(s)",
                 "emoji": True
             },
-            "options": generate_options(logger_list),
-            "action_id": action_id,
-            **({"initial_options": [opt for opt in generate_options(logger_list) if opt['value'] in initial_selected]} if initial_selected else {})
+            "options": options,
+            "action_id": action_id
         }
     }
+
+    # Only include initial_options if non-empty and valid
+    if initial_opts:
+        block["accessory"]["initial_options"] = initial_opts
+
+    return block
+
+
 
 
 def main_menu(ack, respond, menu_options):
@@ -1342,13 +1369,14 @@ def slack_bot(request):
     return slack_events()
 
 
-# If you want to run locally (not needed for Cloud Functions)
-# if __name__ == "__main__":
-#     flask_app.run(port=int(os.getenv("PORT", 3000)))
+#  to run locally (not needed for Cloud Functions)
+# need to be running the file for Slack API to accept the ngrok http url
+if __name__ == "__main__":
+    flask_app.run(port=int(os.getenv("PORT", 3000)))
 
 # if __name__ == "__main__":
 #     app.start(port=int(os.getenv("PORT", 3000)))
-
+# https://18cf-2605-59c0-21f0-fe10-5082-a925-7926-6b87.ngrok-free.app/slack/events
 # https://seal-app-er6sr.ondigitalocean.app/slack/events
 # interactivity is the one that determines the debug
 # https://us-central1-rich-meridian-430023-j1.cloudfunctions.net/slackBot/slack/events
