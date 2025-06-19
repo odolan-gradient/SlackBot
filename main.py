@@ -269,7 +269,7 @@ def handle_soil_and_psi_selections(ack, body, respond):
         loggers = user_selections[user_id]['logger_select_change_soil']
         soil_type = user_selections[user_id]['soil_select']
         soil_type = soil_type.split(' (')[0]  # get rid of FC and WP
-        field = user_selections[user_id]['field']
+        field = user_selections[user_id]['fields']
         grower = user_selections[user_id]['grower']
         grower_name = grower.name
 
@@ -363,7 +363,7 @@ def handle_prev_day_selections(ack, body, respond):
         loggers = user_selections[user_id]['logger_select_prev_day']
         start_date = user_selections[user_id]['start_date_select']
         end_date = user_selections[user_id]['end_date_select']
-        field = user_selections[user_id]['field']
+        field = user_selections[user_id]['fields']
         grower = user_selections[user_id]['grower']
         grower_name = grower.name
         project = SharedPickle.get_project(field, grower_name)
