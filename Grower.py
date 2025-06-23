@@ -1,3 +1,5 @@
+import io
+import sys
 import uuid
 
 from google.cloud import bigquery
@@ -202,23 +204,39 @@ class Grower(object):
 
     def to_string(self, include_fields: bool = True):
         """
-        Function used to print out output to screen. Prints out the Plot type.
-        Then this calls on its loggers list and has each object in the list call its own toString function
-        :return:
+        Function to capture the output that would be printed to the console.
+
+        :param include_fields: Whether to include the fields' string representations.
+        :return: A string containing the captured output.
         """
-        tech_str = f'Tech: {str(self.technician.name)}'
-        region_str = f'Region: {self.region}'
-        print()
-        print(
-            '*****************************************************************************************************************************'
-        )
-        print(f'\tGrower: {self.name}')
-        print(f'\t{tech_str:40} | Active: {str(self.active)}')
-        print(f'\t{region_str:40} | Updated: {str(self.updated)}')
-        print()
-        if include_fields:
-            for f in self.fields:
-                f.to_string()
+        # Create a StringIO object to capture the output
+        output = io.StringIO()
+        # Save the original stdout
+        original_stdout = sys.stdout
+        # Redirect stdout to the StringIO object
+        sys.stdout = output
+
+        try:
+            # Output the details to the StringIO object (which is captured instead of printed)
+            tech_str = f'Tech: {str(self.technician.name)}'
+            region_str = f'Region: {self.region}'
+            print()
+            print(
+                '*****************************************************************************************************************************'
+            )
+            print(f'\tGrower: {self.name}')
+            print(f'\t{tech_str:40} | Active: {str(self.active)}')
+            print(f'\t{region_str:40} | Updated: {str(self.updated)}')
+            print()
+            if include_fields:
+                for f in self.fields:
+                    f.to_string()
+        finally:
+            # Restore the original stdout
+            sys.stdout = original_stdout
+
+        # Get the string from the StringIO object
+        return output.getvalue()
 
     def deactivate(self):
         print('Deactivating Grower {}...'.format(self.name))

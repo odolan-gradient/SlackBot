@@ -9,7 +9,7 @@ start_time = time.time()
 Decagon.reset_updated_all()
 
 Decagon.update_information(get_weather=True, get_data=True, write_to_portal=True, write_to_db=True,
-                           check_for_notifications=True)
+                           check_for_notifications=True, email_notifications=True)
 
 Decagon.show_pickle()
 print()
