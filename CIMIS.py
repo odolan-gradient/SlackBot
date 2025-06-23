@@ -75,8 +75,11 @@ class CIMIS(object):
 
             if response.ok:
                 print(f'\t\tSuccessful API CIMIS call for station/s - {cimis_stations_string}')
-            # print(response.ok)
-            content = response.json()
+                content = response.json()
+            else:
+                print(f'\t\tFailed API CIMIS call for station/s - {cimis_stations_string}')
+                print(response.json())
+
         except Exception as error:
             print(f'\tERROR in CIMIS call for station - {cimis_stations_string}')
             print(error)
@@ -239,11 +242,14 @@ class CIMIS(object):
             response = http.get(url)
 
             if response.ok:
-                print(f'\tSuccessful CIMIS API call for all stations info')
-            # print(response.ok)
-            content = response.json()
+                print(f'\t\tSuccessful API CIMIS call for all stations info')
+                content = response.json()
+            else:
+                print(f'\t\tFailed API CIMIS call for all stations info')
+                print(response.json())
+
         except Exception as error:
-            print(f'\tERROR in CIMIS call for all stations')
+            print(f'\t\tERROR in CIMIS call for all stations')
             print(error)
         except requests.exceptions.Timeout:
             print('Timeout')
@@ -494,7 +500,9 @@ class CIMIS(object):
                 else:
                     print(f'\t\tStation: {station_number} -> Date: {eto_data_point_date} got a None value for ET')
             for station in dict_of_stations:
-                print(f'\t\tStation: {station} -> Dates: {dict_of_stations[station]["dates"]} | ETos: {dict_of_stations[station]["eto"]}')
+                print(f'\t\tStation: {station} -> ')
+                print(f'\t\t\tDates: {dict_of_stations[station]["dates"]}')
+                print(f'\t\t\tETos: {dict_of_stations[station]["eto"]}')
 
         except Exception as error:
             print('ERROR in fill_all_stations_et_data_dict')
@@ -506,11 +514,14 @@ class CIMIS(object):
             if len(dates) == len(dict_of_stations[each_station]['dates']):
                 dict_of_stations[each_station]['station'].updated = True
             else:
-                # Fill in missing data
-                for date in dates:
-                    if date not in dict_of_stations[each_station]['dates']:
-                        dict_of_stations[each_station]['dates'].append(date)
-                        dict_of_stations[each_station]['eto'].append(dict_of_stations[each_station]['station'].latest_eto_value)
+                # No longer filling in missing data as now we are processing 10 days of et at a time and don't want
+                # to overwrite 9 days of good data with 1 day of old data if we have a bad call
+                # # Fill in missing data
+                # for date in dates:
+                #     if date not in dict_of_stations[each_station]['dates']:
+                #         dict_of_stations[each_station]['dates'].append(date)
+                #         dict_of_stations[each_station]['eto'].append(dict_of_stations[each_station]['station'].latest_eto_value)
+                pass
 
         return dict_of_stations
 

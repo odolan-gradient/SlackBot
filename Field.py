@@ -15,7 +15,7 @@ from Notifications import AllNotifications
 from Thresholds import Thresholds
 from WeatherProcessor import WeatherProcessor
 
-DATABASE_YEAR = '2024'
+DATABASE_YEAR = '2025'
 FIELD_PORTALS_BIGQUERY_PROJECT = 'growers-' + DATABASE_YEAR
 
 
@@ -46,6 +46,7 @@ class Field(object):
                  preview_url: str = 'https://i.imgur.com/04UdmBH.png',
                  nickname: str = '',
                  field_type: str = 'Commercial',
+                 name_ms: str = 'NA',
                  ):
         """
         Inits Field class with the following parameters:
@@ -85,6 +86,7 @@ class Field(object):
         self.net_yield = None
         self.paid_yield = None
         self.field_type = field_type
+        self.name_ms = name_ms
 
         if len(nickname) > 0:
             self.nickname = nickname
@@ -135,19 +137,22 @@ class Field(object):
         if not hasattr(self, 'crop_type'):
             self.crop_type = self.loggers[0].crop_type
 
+        if not hasattr(self, 'name_ms'):
+            self.name_ms = 'NA'
+
         field_str = f'Field: {str(self.name)}'
         location_str = f'Location: ({str(self.lat)},{str(self.long)})'
         active_str = f'Active: {str(self.active)}'
         crop_type_str = f'Crop Type: {str(self.crop_type)}'
-        net_yield_str = f'Yield --> Net T/A: {str(self.net_yield)}'
+        yield_str = f'Yield -> Net: {str(self.net_yield)}  Paid: {str(self.paid_yield)}'
 
 
         print('---------------------------------------------------------------------------------------------------')
-        print(f'\t{field_str:40} | Grower: {str(self.grower.name)}')
-        print(f'\t{location_str:40} | CimisStation: {str(self.cimis_station)}')
+        print(f'\t{field_str:40} | Field MS: {str(self.name_ms)}')
+        print(f'\t{location_str:40} | Grower: {str(self.grower.name)}')
         print(f'\t{active_str:40} | Updated: {str(self.updated)}')
         print(f'\t{crop_type_str:40} | Field Type: {self.field_type}')
-        print(f'\t{net_yield_str:40} | Paid T/A: {str(self.paid_yield)}')
+        print(f'\t{yield_str:40} | CimisStation: {str(self.cimis_station)}')
         print(f'\tReport URL: {str(self.report_url)}')
         print()
         if include_loggers:
@@ -165,12 +170,20 @@ class Field(object):
             check_for_notifications: bool = False,
             check_updated: bool = False,
             subtract_from_mrid: int = 0,
-            specific_mrid = None
+            specific_mrid: int = None,
+            zentra_api_version: str = 'v1',
+            specific_start_date: str = None,
+            specific_end_date: str = None
     ):
         """
         Function used to update each fields information. This function will be called every day.
         This function then calls the update function on each of its plots[]
 
+        :param specific_start_date: String date in the format: m-d-Y H:M
+        :param specific_end_date: String date in the format: m-d-Y H:M
+        :param specific_mrid:
+        :param zentra_api_version:
+        :param api_version:
         :param subtract_from_mrid: Int used to subtract a specific amount from the logger MRIDs for API calls
         :param cimis_stations_pickle:
         :param get_weather: Boolean that dictates if we want to get the fields weather forecast
@@ -223,7 +236,7 @@ class Field(object):
                             field_name = self.dbwriter.remove_unwanted_chars_for_db_dataset(self.name)
                             project = self.dbwriter.get_db_project(self.loggers[0].crop_type)
                             self.dbwriter.write_to_table_from_csv(
-                                field_name, 'weather_forecast', weather_filename, weather_schema, project
+                                field_name, f'{field_name}_weather_forecast', weather_filename, weather_schema, project
                             )
                         except Exception as error:
                             print("Error in Field Weather DB Write - " + self.name)
@@ -237,10 +250,17 @@ class Field(object):
 
                         field_loggers_portal_data = {}
                         for logger in self.loggers:
-                            logger_portal_data = logger.update(cimis_stations_pickle, write_to_db=write_to_db,
-                                                               check_for_notifications=check_for_notifications,
-                                                               check_updated=check_updated,
-                                                               subtract_from_mrid=subtract_from_mrid)  # do logger updates
+                            logger_portal_data = logger.update(
+                                cimis_stations_pickle,
+                                write_to_db=write_to_db,
+                                check_for_notifications=check_for_notifications,
+                                check_updated=check_updated,
+                                subtract_from_mrid=subtract_from_mrid,
+                                specific_mrid=specific_mrid,
+                                zentra_api_version=zentra_api_version,
+                                specific_start_date=specific_start_date,
+                                specific_end_date=specific_end_date,
+                            )  # do logger updates
                             if logger_portal_data is not None:
                                 field_loggers_portal_data[logger.id] = logger_portal_data
                         self.check_successful_updated_loggers()
@@ -263,8 +283,7 @@ class Field(object):
                                             new_data_to_write_to_portal = new_data_to_write_to_portal or True
                                         else:
                                             new_data_to_write_to_portal = new_data_to_write_to_portal or False
-
-                                if not new_data_to_write_to_portal:
+                                if new_data_to_write_to_portal:
                                     print()
                                     print('\t>>> Handling ', self.name, ' Portal Data')
 
@@ -633,7 +652,7 @@ class Field(object):
         dbw = DBWriter()
         field_name = dbw.remove_unwanted_chars_for_db_dataset(self.name)
         project = dbw.get_db_project(self.loggers[0].crop_type)
-        table_exsists = dbw.check_if_table_exists(field_name, 'weather_forecast', project=project)
+        table_exsists = dbw.check_if_table_exists(field_name, f'{field_name}_weather_forecast', project=project)
         if table_exsists:
             # Change the order of the previous day to 99
             print('\t\tChanging weather order from prev day to 99')
@@ -650,7 +669,7 @@ class Field(object):
         previous_date = first_date - timedelta(days=1)
         previous_date_string = previous_date.strftime("%Y-%m-%d")
         project = dbw.get_db_project(self.loggers[0].crop_type)
-        dml = "UPDATE `" + project + "." + field + ".weather_forecast` as t SET t.order = 99.0 WHERE date <= '" + previous_date_string + "'"
+        dml = "UPDATE `" + project + "." + field + f".{field}_weather_forecast` as t SET t.order = 99.0 WHERE date <= '" + previous_date_string + "'"
         dbw.run_dml(dml, project=project)
 
     def remove_data_that_is_about_to_be_updated(self, forecast: list):
@@ -661,7 +680,7 @@ class Field(object):
         first_date_string = first_date.strftime("%Y-%m-%d")
         last_date_string = last_date.strftime("%Y-%m-%d")
         project = dbw.get_db_project(self.loggers[0].crop_type)
-        dml = "DELETE `" + project + "." + field + ".weather_forecast` " \
+        dml = "DELETE `" + project + "." + field + f".{field}_weather_forecast` " \
                                                    "WHERE date BETWEEN DATE('" + first_date_string + "') AND DATE('" + last_date_string + "') "
         # print(dml)
         dbw.run_dml(dml, project=project)
@@ -738,8 +757,8 @@ class Field(object):
             )
 
     def deactivate(self):
-        print('Deactivating Field {}...'.format(self.name))
+        print('\t\tDeactivating Field {}...'.format(self.name))
         self.active = False
         for logger in self.loggers:
             logger.deactivate()
-        print('Done')
+        print('\t\tDone')

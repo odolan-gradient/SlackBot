@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 import json
 import time
@@ -6,6 +8,7 @@ from collections import defaultdict
 from collections import deque
 from datetime import date, timedelta, datetime
 from os import path
+from typing import Any
 
 import requests
 from dateutil import tz
@@ -21,6 +24,7 @@ from Notifications import Notification_SensorError, Notification_TechnicianWarni
 from Soils import Soil
 from Technician import Technician
 from Thresholds import Thresholds
+from Zentra import Zentra
 
 DIRECTORY_YEAR = "2025"
 DXD_DIRECTORY = "H:\\Shared drives\\Stomato\\" + DIRECTORY_YEAR + "\\Dxd Files\\"
@@ -109,6 +113,10 @@ class Logger(object):
         :param planting_date:
         :param rnd:
         """
+        if len(nickname) > 0:
+            self.nickname = nickname
+        else:
+            self.nickname = name
 
         self.id = id
         self.password = password
@@ -123,6 +131,7 @@ class Logger(object):
         self.updated = False
         self.crashed = False
         self.crop_coefficient = CropCoefficient()
+
         if self.id[0] == 'z':
             self.model = 'z6'
         else:
@@ -139,6 +148,7 @@ class Logger(object):
         if irrigation_set_acres is not None:
             self.irrigation_set_acres = float(irrigation_set_acres)
         self.prev_mrid = 0
+        self.prev_last_data_date = None
         self.rnd = rnd
         self.active = active
         self.lat = lat
@@ -221,90 +231,200 @@ class Logger(object):
             subtract_from_mrid: int = 0,
             mr_id_location: str = DXD_DIRECTORY,
             dxd_save_location: str = DXD_DIRECTORY,
-            file_name: str = None,
-    ) -> bool:
+            specific_file_name: str = None,
+            zentra_api_version: str = 'v1',
+            specific_start_date: str = None,
+            specific_end_date: str = None,
+    ) -> tuple[bool, dict | None] | tuple[bool, Any, Any, Any, Any, Any]:
         """
         Download dxd files from decagon API containing all the logger information and store them.
-        Call on the corresponding API for z6 loggers. Using zentra API v1.0
+        Call on the corresponding API for z6 loggers.
 
         Access information for the API is hard coded - email, user_password, url
         Files are stored in the OutputFolder with the Logger ID as the name. For example:
-            5G0B0420.dxd
+            z6-12345.dxd
+
+        :param specific_mrid:
+        :param subtract_from_mrid:
+        :param mr_id_location:
+        :param dxd_save_location:
+        :param specific_file_name:
+        :param zentra_api_version:
+        :param specific_start_date: String date in the format: m-d-Y H:M
+        :param specific_end_date: String date in the format: m-d-Y H:M
         :return:
         """
         response_success = False
-        # file_path = ''
-        mr_id_file_path = ''
-        dxd_save_location_file_path = ''
-        if file_name is None:
-            file_name = self.id + '.dxd'
-        else:
-            file_name = file_name + '.dxd'
-        if path.exists(mr_id_location):
-            mr_id_file_path = mr_id_location + file_name
-        if path.exists(dxd_save_location):
-            dxd_save_location_file_path = dxd_save_location + file_name
 
-        # if path.exists(DXD_DIRECTORY):
-        #     file_path = DXD_DIRECTORY + file_name
-
-        mr_id = 0
-        if self.crashed:
-            print("\tCrashed so running with previous MRID: {0}".format(self.prev_mrid))
-            mr_id = self.prev_mrid
-            # Resetting the crashed boolean
-            self.crashed = False
-            mr_id_to_set_back = 0
-        else:
-            file_mrid = self.get_mrid(mr_id_file_path)
-            print(f'\tDXD mrid = {file_mrid}')
-            mr_id_to_set_back = file_mrid
-            if specific_mrid is not None:
-                # We passed in a specific_mrid
-                mr_id = specific_mrid
-                print(
-                    f"\t-->> Running from specific MRID: {str(specific_mrid)}"
-                )
-            elif subtract_from_mrid > 0:
-                # We passed in a subtract_from_mrid
-                mr_id = file_mrid - subtract_from_mrid
-                print(
-                    f"\t-->> Subtracting from MRID: {str(file_mrid)} - {str(subtract_from_mrid)} = {str(mr_id)}"
-                )
-            else:
-                # No special pass in's, just default run
-                mr_id = file_mrid
-                mr_id_to_set_back = 0
-                self.prev_mrid = mr_id
-
-        if mr_id < 0:
-            print(f'\tMRID is negative {mr_id}, so setting to 0')
+        if zentra_api_version == 'v1':
             mr_id = 0
-        response = self.zentra_api_call(mr_id)
+            mr_id_file_path = ''
+            dxd_save_location_file_path = ''
+            if specific_file_name is None:
+                specific_file_name = self.id + '.dxd'
+            else:
+                specific_file_name = specific_file_name + '.dxd'
+            if path.exists(mr_id_location):
+                mr_id_file_path = mr_id_location + specific_file_name
+            if path.exists(dxd_save_location):
+                dxd_save_location_file_path = dxd_save_location + specific_file_name
 
-        if response.ok:
-            response_success = True
-            self.write_dxd_file(dxd_save_location_file_path, response, mr_id_to_set_back)
-        else:
-            print('\tResponse not OK')
-            response_success = False
-        return response_success
+            if self.crashed:
+                print("\tCrashed so running with previous MRID: {0}".format(self.prev_mrid))
+                mr_id = self.prev_mrid
+                # Resetting the crashed boolean
+                self.crashed = False
+                mr_id_to_set_back = 0
+            else:
+                if self.is_file(mr_id_file_path):
+                    file_mrid = self.read_mrid(mr_id_file_path)
+                else:
+                    file_mrid = 0
+                print(f'\tDXD mrid = {file_mrid}')
+                mr_id_to_set_back = file_mrid
+                if specific_mrid is not None:
+                    # We passed in a specific_mrid
+                    mr_id = specific_mrid
+                    print(
+                        f"\t-->> Running from specific MRID: {str(specific_mrid)}"
+                    )
+                elif subtract_from_mrid > 0:
+                    # We passed in a subtract_from_mrid
+                    mr_id = file_mrid - subtract_from_mrid
+                    print(
+                        f"\t-->> Subtracting from MRID: {str(file_mrid)} - {str(subtract_from_mrid)} = {str(mr_id)}"
+                    )
+                else:
+                    # No special pass in's, just default run
+                    mr_id = file_mrid
+                    mr_id_to_set_back = 0
+                    self.prev_mrid = mr_id
 
-    def write_dxd_file(self, file_path, response, mr_id_to_set_back: int = 0):
+            if mr_id < 0:
+                print(f'\tMRID is negative {mr_id}, so setting to 0')
+                mr_id = 0
+
+            # # TEMPORARY HARDCODE SUBTRACT TO GET 21 DAYS OF DATA
+            # if self.crop_type in ['almonds', 'Almonds', 'almond']:
+            #     mr_id = mr_id - (24*21)
+            # ######################
+            api_time_start = time.time()
+            response = self.zentra_api_call(mr_id)
+            converted_raw_data = None
+
+            if response.ok:
+                response_success = True
+                api_time_end = time.time()
+                elapsed_time = api_time_end - api_time_start
+                print(f'v1 API call took {round(elapsed_time)} secs')
+                parsed_json = json.loads(response.content)
+                self.write_dxd_file(dxd_save_location_file_path, parsed_json, mr_id_to_set_back)
+
+                print('Reading data-')
+                raw_dxd = self.read_dxd()
+                raw_data = self.get_all_ports_information(raw_dxd)
+                print('-Finished')
+                print()
+                converted_raw_data = raw_data
+
+            else:
+                print('\tResponse not OK')
+                response_success = False
+            return response_success, converted_raw_data
+
+        elif zentra_api_version == 'v4':
+            device_sn = self.id
+            current_year = datetime.now().year
+            dxd_save_location_file_path = ''
+
+            if specific_file_name is None:
+                file_name = self.id + '_v4.dxd'
+            else:
+                file_name = specific_file_name + '.dxd'
+            if path.exists(dxd_save_location):
+                dxd_save_location_file_path = dxd_save_location + file_name
+
+            # Handle crashed logger runs
+            if self.crashed:
+                print(f"\tCrashed so running from last data date: {self.prev_last_data_date}")
+                start_date = self.prev_last_data_date
+                current_datetime_dt = datetime.now().replace(minute=0, second=0, microsecond=0)
+                end_date = current_datetime_dt.strftime("%m-%d-%Y %H:%M")
+                # Resetting the crashed boolean
+                self.crashed = False
+                date_to_set_back = None
+            else:
+                # Go grab last data's date from dxd
+                if self.is_file(dxd_save_location_file_path):
+                    default_start_date = self.read_last_data_date(dxd_save_location_file_path)
+                    print(f'\tDXD last data date = {default_start_date}')
+                    date_to_set_back = default_start_date
+                else:
+                    start_date_dt = datetime(current_year, 1, 1, 0, 0)
+                    default_start_date = start_date_dt.strftime("%m-%d-%Y %H:%M")
+                    date_to_set_back = None
+                    print(f'\tNo DXD file, start date set to default = {default_start_date}')
+
+                # Set start date
+                if specific_start_date is not None:
+                    start_date = specific_start_date
+                    print(
+                        f"\t-->> Running from specific start date: {str(start_date)}"
+                    )
+                else:
+                    start_date = default_start_date
+                    self.prev_last_data_date = start_date
+                    date_to_set_back = None
+
+                # Set end date
+                if specific_end_date is not None:
+                    end_date = specific_end_date
+                else:
+                    current_datetime_dt = datetime.now().replace(minute=0, second=0, microsecond=0)
+                    end_date = current_datetime_dt.strftime("%m-%d-%Y %H:%M")
+
+            (
+                response_success,
+                all_raw_data_returned,
+                all_results_structured,
+                all_results_filtered,
+                all_results_dynamically_filtered,
+                organized_results
+            ) = Zentra.get_and_filter_all_data(
+                device_sn, start_date, end_date)
+
+            # Write raw data return to dxd
+            if len(all_raw_data_returned) != 0:
+                self.write_dxd_file(
+                    dxd_save_location_file_path,
+                    all_raw_data_returned,
+                    date_to_set_back=date_to_set_back
+                )
+            return (response_success, all_raw_data_returned, all_results_structured, all_results_filtered,
+                    all_results_dynamically_filtered, organized_results)
+        return None
+
+    def write_dxd_file(self, file_path, data_json, mr_id_to_set_back: int = 0, date_to_set_back: str = None):
         try:
             write_dxd_start_time = time.time()
 
             print('\tWriting dxd file...')
 
-            parsed_json = json.loads(response.content)
             if mr_id_to_set_back > 0:
                 print(f'\tMRID was adjusted by special pass in (subtract or specific mrid)...')
                 print(f'\tModifying file MRID with the set back MRID: {mr_id_to_set_back}')
-                if "created" in parsed_json:
+                if "created" in data_json:
                     # Modify the MRID to the new value
-                    parsed_json['device']['timeseries'][-1]['configuration']['values'][-1][1] = mr_id_to_set_back
+                    data_json['device']['timeseries'][-1]['configuration']['values'][-1][1] = mr_id_to_set_back
+
+            if date_to_set_back is not None:
+                print(f'\tStart Date was adjusted by special pass in (specific start date)...')
+                print(f'\tModifying file last data date with the set back date: {date_to_set_back}')
+                if "pagination" in data_json[-1]:
+                    data_json[-1]['pagination']['page_end_date'] = date_to_set_back
+
             with open(file_path, 'w', encoding="utf8") as fd:
-                json.dump(parsed_json, fd, indent=4, sort_keys=True, default=str)
+                json.dump(data_json, fd, indent=4, sort_keys=True, default=str)
 
             write_dxd_end_time = time.time()
             print("----------FINISHED----------")
@@ -381,13 +501,6 @@ class Logger(object):
             print(e)
         return response
 
-    def get_mrid(self, file_path):
-        if self.is_file(file_path):
-            mr_id = self.read_mrid(file_path)
-        else:
-            mr_id = 0
-        return mr_id
-
     def is_file(self, file: str) -> bool:
         """
         Check if a file is a file or not.
@@ -426,6 +539,27 @@ class Logger(object):
                 return mrid
         return 0
 
+    def read_last_data_date(self, file_path: str):
+        """
+        Read and return the last data point date from a dxd file.
+
+        :param file_path:
+            File we want to get the date from
+        :return:
+            date if found, first day of this year if not
+        """
+        with open(file_path) as file:
+            raw_data = json.load(file)
+            if "pagination" in raw_data[-1]:
+                last_data_date = raw_data[-1]['pagination']['page_end_date']
+                # self.prev_mrid = mrid
+                return last_data_date
+            else:
+                current_year = datetime.now().year
+                last_data_date_dt = datetime(current_year, 1, 1, 0, 0)
+                last_data_date = last_data_date_dt.strftime("%m-%d-%Y %H:%M")
+                return last_data_date
+
     def read_ereset(self, dxd_file):
         """
         Read and return the eReset from a dxd file.
@@ -448,7 +582,7 @@ class Logger(object):
                 return ereset
         return 0
 
-    def read_battery_level(self, dxd_file: str):
+    def read_battery_level(self, zentra_api_version: str = 'v1'):
         """
         Read and return the Battery level from a dxd file.
 
@@ -459,12 +593,24 @@ class Logger(object):
         :return:
             Battery level if found, None if not
         """
+        if zentra_api_version == 'v1':
+            if path.exists(DXD_DIRECTORY):
+                file_name = DXD_DIRECTORY + self.id + '.dxd'
 
-        with open(dxd_file) as file:
-            data = json.load(file)
-            if "created" in data:
-                battery_level = data['device']['timeseries'][-1]['configuration']['values'][-1][-2][0]['value']
-                return battery_level
+            with open(file_name) as file:
+                data = json.load(file)
+                if "created" in data:
+                    battery_level = data['device']['timeseries'][-1]['configuration']['values'][-1][-2][0]['value']
+                    return battery_level
+        elif zentra_api_version == 'v4':
+            if path.exists(DXD_DIRECTORY):
+                file_name = DXD_DIRECTORY + self.id + '_v4.dxd'
+
+            with open(file_name) as file:
+                data_json = json.load(file)
+                if "data" in data_json[-1]:
+                    battery_level = data_json[-1]['data']['Battery Percent'][-1]['readings'][-1]['value']
+                    return battery_level
         return None
 
     def read_dxd(self, dxd_save_location: str = DXD_DIRECTORY, file_name: str = None, ):
@@ -554,12 +700,12 @@ class Logger(object):
 
                         # If it has all required ports and each port is set to the correct sensor:
                         if (has_all_ports and
-                            ports[1] in ['Infra Red'] and
-                            ports[2] in ['VP4', 'Atmos 14'] and
-                            ports[3] in ['GS1', 'Terros 10', 'GS3', 'Terros 12'] and
-                            ports[4] in ['GS1', 'Terros 10', 'GS3', 'Terros 12'] and
-                            ports[5] in ['GS1', 'Terros 10', 'GS3', 'Terros 12'] and
-                            ports[6] in ['Switch']):
+                                ports[1] in ['Infra Red'] and
+                                ports[2] in ['VP4', 'Atmos 14'] and
+                                ports[3] in ['GS1', 'Terros 10', 'GS3', 'Terros 12'] and
+                                ports[4] in ['GS1', 'Terros 10', 'GS3', 'Terros 12'] and
+                                ports[5] in ['GS1', 'Terros 10', 'GS3', 'Terros 12'] and
+                                ports[6] in ['Switch']):
 
                             # If we passed all our checks, this is a valid timeseries we care about so append it along with
                             # its ports to all_data_series as a tuple (timeseries['configuration], ports)
@@ -570,7 +716,8 @@ class Logger(object):
             # For each tuple (chapter, ports) in all the chapters and ports that have data we care about
             for data_series, ports in all_data_series:
                 # print(ports)
-                data_index_offset, ir_port, vp4_port, vwc1_port, vwc2_port, vwc3_port, switch_port = self.get_sensor_port_indexes(ports)
+                data_index_offset, ir_port, vp4_port, vwc1_port, vwc2_port, vwc3_port, switch_port = self.get_sensor_port_indexes(
+                    ports)
                 sensor_data_indexes = self.get_sensor_individual_data_indexes()
 
                 # Grab data
@@ -604,7 +751,8 @@ class Logger(object):
 
                                 # Grabbing VP4/Atmos 14 data
                                 if vp4_port is not None:
-                                    vp4_air_temp_value = data_point[vp4_port][sensor_data_indexes['vp4 air temp']]['value']
+                                    vp4_air_temp_value = data_point[vp4_port][sensor_data_indexes['vp4 air temp']][
+                                        'value']
                                     if vp4_air_temp_value == 'None' or vp4_air_temp_value == '':
                                         vp4_air_temp_value = None
                                     converted_results["ambient temperature"].append(vp4_air_temp_value)
@@ -676,7 +824,8 @@ class Logger(object):
 
                                 # Grabbing Switch data
                                 if switch_port is not None:
-                                    switch_value = data_point[switch_port][sensor_data_indexes['switch minutes']]['value']
+                                    switch_value = data_point[switch_port][sensor_data_indexes['switch minutes']][
+                                        'value']
                                     if switch_value == 'None' or switch_value == '':
                                         switch_value = None
                                     converted_results["daily switch"].append(switch_value)
@@ -1185,7 +1334,6 @@ class Logger(object):
         :param data:
         :return:
         """
-
         print('\tDelete Last Day')
         todayRaw = date.today()
         lastElement = len(data["dates"]) - 1
@@ -1406,7 +1554,7 @@ class Logger(object):
         return portal_data_dict
 
     def check_for_notifications_final_results(self, final_results_converted: dict, warnings: bool = True,
-                                              errors: bool = True):
+                                              errors: bool = True, zentra_api_version: str = 'v1'):
         """
         Function to check the daily values after conversion and processing to see if any of the numbers are
         outside of the thresholds
@@ -1424,10 +1572,7 @@ class Logger(object):
 
         thresholds = Thresholds()
 
-        if path.exists(DXD_DIRECTORY):
-            file_name = DXD_DIRECTORY + self.id + '.dxd'
-
-        battery_level = self.read_battery_level(file_name)
+        battery_level = self.read_battery_level(zentra_api_version=zentra_api_version)
 
         if errors:
             if battery_level < thresholds.battery_threshold and battery_level is not None:
@@ -1447,6 +1592,7 @@ class Logger(object):
                 vwc_1 = final_results_converted["vwc_1"][ind]
                 vwc_2 = final_results_converted["vwc_2"][ind]
                 vwc_3 = final_results_converted["vwc_3"][ind]
+                # daily_switch = final_results_converted["daily_switch"][ind]
                 sdd = final_results_converted["sdd"][ind]
                 air_temperature = final_results_converted["ambient temperature"][ind]
                 # TODO Check lowest temperature values
@@ -1470,6 +1616,10 @@ class Logger(object):
 
                     self.vwc_notifications(field_name, self.soil, date, vwc_1, vwc_2, vwc_3, technician, thresholds,
                                            warnings=warnings, errors=errors)
+
+                    # TODO: make switch notifications, ie if vwc changes but no switch activity
+                    # self.switch_notifications(field_name, self.soil, date, vwc_1, vwc_2, vwc_3, technician, thresholds,
+                    #                        warnings=warnings, errors=errors)
 
     def check_for_notifications_all_data(self, all_data: dict):
         """
@@ -1733,6 +1883,33 @@ class Logger(object):
                             f"!!!! VWC_3 in VERY HIGH levels: {str(round(vwc_3, 1))} > {str(soil.very_high_lower)} for soil type: {soil.soil_type}"
                         )
                     )
+    def switch_notifications(
+            self,
+            field_name: str,
+            soil,
+            date: datetime,
+            vwc_1: float,
+            vwc_2: float,
+            vwc_3: float,
+            technician: Technician,
+            thresholds: Thresholds,
+            warnings: bool = True,
+            errors: bool = True
+    ):
+        # table_results = SQLScripts.get_entire_table_points(field_name)
+        if vwc_1 is not None:
+            if vwc_1 < thresholds.error_vwc_lower or vwc_1 > thresholds.error_vwc_upper:
+                if errors:
+                    technician.all_notifications.add_notification(
+                        Notification_SensorError(
+                            date,
+                            field_name,
+                            self,
+                            "VWC_1",
+                            f"VWC_1 is out of reasonable bounds: {vwc_1}. Connection issue?"
+                        )
+                    )
+
 
     def vp4_notifications(
             self,
@@ -1956,9 +2133,12 @@ class Logger(object):
 
             elif self.field.crop_type in ['Pistachio', 'pistachio', 'Pistachios', 'pistachios']:
                 # Pistachio PSI Notifications
-                ir_start_date = datetime(date.year, 3, 1).date()
+                # ir_start_date = datetime(date.year, 5, 1).date()
+                ir_start_date = Thresholds.pistachio_start_date
                 ir_start_date_plus_15 = ir_start_date + timedelta(days=15)
-                if (2 < date.month < 10) and (date.date() >= ir_start_date_plus_15):
+                # changing the window to be much smaller so it doesnt send
+                # out errors after techs have disabled the IR manually in later season
+                if (4 < date.month < 11) and (date.date() >= ir_start_date_plus_15):
                     technician.all_notifications.add_notification(
                         Notification_SensorError(
                             date,
@@ -1971,9 +2151,10 @@ class Logger(object):
 
             elif self.field.crop_type in ['Almond', 'almond', 'Almonds', 'almonds']:
                 # Almond PSI Notifications
-                ir_start_date = datetime(date.year, 5, 1).date()
+                # ir_start_date = datetime(date.year, 5, 1).date()
+                ir_start_date = Thresholds.almond_start_date
                 ir_start_date_plus_15 = ir_start_date + timedelta(days=15)
-                if (4 < date.month < 11) and (date.date() >= ir_start_date_plus_15):
+                if (2 < date.month < 10) and (14 < date.day) and (date.date() >= ir_start_date_plus_15):
                     technician.all_notifications.add_notification(
                         Notification_SensorError(
                             date,
@@ -1987,7 +2168,6 @@ class Logger(object):
                 # Other crops
                 pass
 
-
     def update(
             self,
             cimis_stations_pickle,
@@ -1995,11 +2175,20 @@ class Logger(object):
             check_for_notifications: bool = False,
             specific_mrid: int = None,
             subtract_from_mrid: int = 0,
-            check_updated: bool = False
+            check_updated: bool = False,
+            zentra_api_version: str = 'v1',
+            specific_start_date: str = None,
+            specific_end_date: str = None,
     ) -> dict:
         """
         Function to update the information from each Logger
 
+        :param specific_start_date: String date in the format: m-d-Y H:M
+        :param specific_end_date: String date in the format: m-d-Y H:M
+        :param zentra_api_version:
+        :param end_date:
+        :param start_date:
+        :param api_version:
         :param write_to_db:
         :param check_for_notifications:
         :param specific_mrid:
@@ -2023,31 +2212,34 @@ class Logger(object):
                     print(
                         '------------------------------------------------------------------------------------------------------------------------'
                     )
-                    # Download dxd files from Decaon API
+
+                    # Download dxd files from Decagon API
                     print()
                     print('Downloading Data into DXD files-')
-                    response_success = self.get_logger_data(
+                    # response_success, converted_raw_data
+                    results = self.get_logger_data(
                         specific_mrid=specific_mrid,
-                        subtract_from_mrid=subtract_from_mrid
+                        subtract_from_mrid=subtract_from_mrid,
+                        zentra_api_version=zentra_api_version,
+                        specific_start_date=specific_start_date,
+                        specific_end_date=specific_end_date
                     )
+
+                    if len(results) == 2:
+                        response_success, converted_raw_data = results
+                    elif len(results) == 6:
+                        response_success, all_raw_data_returned, all_results_structured, all_results_filtered, all_results_dynamically_filtered, converted_raw_data = results
+                    else:
+                        response_success = False
+                        print('ERROR Unexpected number of values returned from Logger.get_logger_data()')
+
                     # print('-METER API Quota Delay')
                     # time.sleep(20)
                     print('-Finished')
                     print()
 
-                    # Read data in dxd files
+                    # # Read data in dxd files
                     if response_success:
-                        print('Reading data-')
-                        raw_dxd = self.read_dxd()
-                        raw_data = self.get_all_ports_information(raw_dxd)
-                        print('-Finished')
-                        print()
-                        converted_raw_data = raw_data  # NO DUPLICATE REMOVAL
-                        # converted_raw_data = self.remove_duplicate_data(raw_data)         #DUPLICATE REMOVAL
-                        # self.remove_duplicate_data_2(raw_data)
-                        # Testing removal of duplicate data algorithm
-                        # converted_raw_data = self.remove_out_of_order_data(converted_raw_data)          #OUT OF ORDER DATA REMOVAL
-
                         if check_for_notifications:
                             # Check for notifications
                             try:
@@ -2073,6 +2265,11 @@ class Logger(object):
 
                         print('\tUpdating irrigation ledger')
                         self.cwsi_processor.update_irrigation_ledger(converted_raw_data, self.irrigation_ledger)
+                        ################### TEMP FIX FOR 15 MINUTE INTERVAL ##########################
+                        # self.irrigation_ledger = {}
+                        # self.cwsi_processor.update_irrigation_ledger_2(converted_raw_data, self.irrigation_ledger)
+                        # self.cwsi_processor.update_irrigation_ledger_3(converted_raw_data, self.irrigation_ledger)
+                        ##############################################################################
                         print('\t Ledger after update:')
                         self.show_irrigation_ledger()
                         print('\t ...done')
@@ -2138,7 +2335,8 @@ class Logger(object):
                             try:
                                 print()
                                 print('\tChecking for Notifications on final results')
-                                self.check_for_notifications_final_results(final_results_converted, warnings=False)
+                                self.check_for_notifications_final_results(final_results_converted, warnings=False,
+                                                                           zentra_api_version=zentra_api_version)
                                 print('\t-Finished')
                             except Exception as e:
                                 print("Error in Logger check_for_notifications_final_results - " + self.name)
@@ -2219,14 +2417,20 @@ class Logger(object):
                                         db_dates_list = []
 
                                     # Prepping data to be written
-                                    self.cwsi_processor.prep_data_for_writting_db(final_results_converted, self, db_dates_list)
+                                    self.cwsi_processor.prep_data_for_writting_db(final_results_converted, self,
+                                                                                  db_dates_list)
 
                                     self.dbwriter.write_to_table_from_csv(
                                         dataset_id, table_id, 'data.csv', schema, project
                                     )
-                                    print('\tMerging ET table with Logger table')
-                                    # Merge ET table with Logger table
-                                    self.merge_et_db_with_logger_db_values()
+
+                                    ####################################
+                                    # Commenting this out as updating logger tables with ET data is going to be part of
+                                    # the ET Update pipeline
+                                    # print('\tMerging ET table with Logger table')
+                                    # # Merge ET table with Logger table
+                                    # self.merge_et_db_with_logger_db_values()
+                                    ####################################
                                     print('\t-Finished')
 
                                 else:
@@ -2300,8 +2504,19 @@ class Logger(object):
         for date in dates_to_remove:
             del self.irrigation_ledger[date]
 
+    def get_ir_date(self):
+        current_year = datetime.now().year
+        crop = self.crop_type
+        if crop == 'Almonds':
+            return date(current_year, 3, 1)
+        elif crop == 'Pistachios':
+            return date(current_year, 5, 1)
+        elif crop == 'Tomatoes':
+            planting_date = self.planting_date
+            return planting_date + timedelta(days=30)
+
     def should_ir_be_active(self, date_to_check: datetime.date = datetime.today().date()) -> bool:
-        print('\t\tChecking if IR should be active:')
+        print(f'\t\tChecking if IR should be active for {date_to_check}:')
 
         # Checking to make sure ir_active is False before the other checks so that we don't turn off IR on permanent
         # crops if it's already on. For tomatoes, ir_active will always be false if we come into this function.
@@ -2322,17 +2537,66 @@ class Logger(object):
             psi_threshold_high = 1.6
             sdd_threshold = -5.0
             planting_date_plus_30 = self.planting_date + timedelta(days=30)
-            if date_to_check > planting_date_plus_30:
-                for psi_val, sdd_val, _ in self.consecutive_ir_values:
-                    if psi_val > psi_threshold_high or sdd_val > sdd_threshold:
-                        print(f'\t\t\t SI values did not pass:')
-                        print(f'\t\t\t PSI -> {psi_val} > {psi_threshold_high}?')
-                        print(f'\t\t\t SDD -> {sdd_val} > {sdd_threshold}?')
-                        return False
+
+            # If its On keep it on - there's no off switch for tomatoes
+            if self.ir_active:
+                return True
+
+            # If its Off should it be On
+            if self.ir_active is False:
+                if date_to_check > planting_date_plus_30:
+                    for psi_val, sdd_val, _ in self.consecutive_ir_values:
+                        if psi_val > psi_threshold_high or sdd_val > sdd_threshold:
+                            print(f'\t\t\t SI values did not pass:')
+                            print(f'\t\t\t PSI -> {psi_val} > {psi_threshold_high}?')
+                            print(f'\t\t\t SDD -> {sdd_val} > {sdd_threshold}?')
+                            return False
+                    else:
+                        # IR Should be turned on
+                        technician = self.field.grower.technician
+                        # Tomato PSI Turning on Notification
+                        technician.all_notifications.add_notification(
+                            Notification_SensorError(
+                                date_to_check,
+                                self.field.name,
+                                self,
+                                "PSI",
+                                f"PSI just turned on for {self.name}"
+                            )
+                        )
+                        print('\t IR Turning On')
+                        return True
+
+        elif self.crop_type.lower() in ['almond', 'almonds']:
+            psi_threshold_high = 0.5
+
+            # SDD checks were not working well since trees turn on earlier in the year so cold temps can lead to
+            # deceivingly low SDDs. Off for now
+            # sdd_threshold = -3.0
+
+            # almond window: March 15 – September 30
+            # start_date = date(date.today().year, 3, 14)  # March 14
+            # end_date = date(date.today().year, 10, 1)  # October 1
+            start_date = Thresholds.almond_start_date
+            end_date = Thresholds.almond_end_date
+
+            # IF its on check if it should turn off
+            if self.ir_active:
+                if date_to_check > end_date:
+                    return False
                 else:
+                    return True
+
+            # If its Off should it turn on
+            elif self.ir_active is False:
+                if start_date < date_to_check < end_date:
+                    for psi_val, _, _ in self.consecutive_ir_values:
+                        if psi_val > psi_threshold_high:  # or sdd_val > sdd_threshold:
+                            return False
+                    # if IR is off and did not fail checks turn IR ON
                     # IR Should be turned on
                     technician = self.field.grower.technician
-                    # Tomato PSI Turning on Notification
+                    # PSI Turning on Notification
                     technician.all_notifications.add_notification(
                         Notification_SensorError(
                             date_to_check,
@@ -2344,31 +2608,8 @@ class Logger(object):
                     )
                     print('\t IR Turning On')
                     return True
-
-        elif self.crop_type.lower() in ['almond', 'almonds']:
-            psi_threshold_high = 0.5
-
-            # SDD checks were not working well since trees turn on earlier in the year so cold temps can lead to
-            # deceivingly low SDDs. Off for now
-            # sdd_threshold = -3.0
-
-            # If date_to_check's date is between March and October (Active almond tree cycle)
-            if 2 < date_to_check.month < 10:
-                # if within months check if IR is On.If on, leave it on
-                if self.ir_active:
-                    return True
-                # if IR has not been turned on see if it passes checks
                 else:
-                    for psi_val, _, _ in self.consecutive_ir_values:
-                        if psi_val > psi_threshold_high:  # or sdd_val > sdd_threshold:
-                            return False
-                    # if IR is off and did not fail checks turn IR ON
-                    else:
-                        print('\t IR Turning On')
-                        return True
-            # if outside the months turn IR off always
-            else:
-                return False
+                    return False
 
         elif self.crop_type.lower() in ['pistachio', 'pistachios']:
             psi_threshold_high = 0.5
@@ -2377,24 +2618,58 @@ class Logger(object):
             # deceivingly low SDDs. Off for now
             # sdd_threshold = -3.0
 
-            # If date_to_check's date is between May and November (Active pistachio tree cycle)
-            if 4 < date_to_check.month < 11:
-                # if within months check if IR is On. If on, leave it on
-                if self.ir_active:
-                    return True
-                # if IR has not been turned on see if it passes checks
+            # pistachio window: April 15 – Nov 1
+            start_date = Thresholds.pistachio_start_date
+            end_date = Thresholds.pistachio_end_date
+
+            # IF its on check if it should turn off
+            if self.ir_active:
+                if date_to_check > end_date:
+                    return False
                 else:
+                    return True
+
+            # If its Off should it turn on
+            elif self.ir_active is False:
+                if start_date < date_to_check < end_date:
                     for psi_val, _, _ in self.consecutive_ir_values:
                         if psi_val > psi_threshold_high:  # or sdd_val > sdd_threshold:
                             return False
                     # if IR is off and did not fail checks turn IR ON
-                    else:
-                        print('\t IR Turning On')
-                        return True
-            # if outside the months turn IR off always
-            else:
-                # print('\t\tIR NOT Active')
-                return False
+                    # IR Should be turned on
+                    technician = self.field.grower.technician
+                    # PSI Turning on Notification
+                    technician.all_notifications.add_notification(
+                        Notification_SensorError(
+                            date_to_check,
+                            self.field.name,
+                            self,
+                            "PSI",
+                            f"PSI just turned on for {self.name}"
+                        )
+                    )
+                    print('\t IR Turning On')
+                    return True
+                else:
+                    return False
+
+            # # If date_to_check's date is between May and November (Active pistachio tree cycle)
+            # if start_date < date_to_check < end_date:
+            #     # if within months check if IR is On. If on, leave it on
+            #     if self.ir_active:
+            #         return True
+            #     # if IR has not been turned on see if it passes checks
+            #     else:
+            #         # return False  # waiting for technician confirmation to turn on
+            #         for psi_val, _, _ in self.consecutive_ir_values:
+            #             if psi_val > psi_threshold_high:  # or sdd_val > sdd_threshold:
+            #                 return False
+            #         # if IR is off and did not fail checks turn IR ON
+            #         print('\t IR Turning On')
+            #         return True
+            # # if outside the months turn IR off always
+            # else:
+            #     return False
 
         elif self.crop_type.lower() == 'dates' or self.crop_type.lower() == 'date':
             # La Quinta requested to always see canopy temp and SDD
@@ -2416,11 +2691,11 @@ class Logger(object):
         return True
 
     def deactivate(self):
-        print('Deactivating Logger {}...'.format(self.id))
+        print('\t\t\tDeactivating Logger {}...'.format(self.id))
         self.active = False
         if self.uninstall_date is None:
             self.uninstall_date = datetime.now().date()
-        print('Done')
+        print('\t\t\tDone')
 
     def calculate_total_gdd_and_crop_stage(self, final_results_converted: dict) -> dict:
         print('\tCalculating GDDS and Crop Stage:')
@@ -2565,11 +2840,13 @@ class Logger(object):
             final_results_converted['eto'].append(latest_eto)
             final_results_converted['etc'].append(etc)
             final_results_converted['et_hours'].append(et_hours)
-            print(f"\tGot ET data from pickle: ETo: {latest_eto}, kc: {kc}, ETc: {etc}, ET Hours: {et_hours}, Acres: {acres}, GPM: {gpm}")
+            print(
+                f"\tGot ET data from pickle: ETo: {latest_eto}, kc: {kc}, ETc: {etc}, ET Hours: {et_hours}, Acres: {acres}, GPM: {gpm}")
         except Exception as error:
             print("Error in logger ET data grab from pickle - " + self.name)
             print("Error type: " + str(error))
-            print(f"ET data from pickle: ETo: {latest_eto}, kc: {kc}, ETc: {etc}, ET Hours: {et_hours}, Acres: {acres}, GPM: {gpm}")
+            print(
+                f"ET data from pickle: ETo: {latest_eto}, kc: {kc}, ETc: {etc}, ET Hours: {et_hours}, Acres: {acres}, GPM: {gpm}")
         return final_results_converted
 
     def update_et_values_from_et_db(self, final_results_converted):

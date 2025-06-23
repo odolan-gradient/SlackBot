@@ -59,14 +59,14 @@ class CimisStation(object):
                     return stations.latest_eto_value
 
     def open_cimis_station_pickle(self):
-        if path.exists("H:\\Shared drives\\Stomato\\2024\\Pickle\\cimisStation.pickle"):
-            with open("H:\\Shared drives\\Stomato\\2024\\Pickle\\cimisStation.pickle", 'rb') as f:
+        if path.exists("H:\\Shared drives\\Stomato\\2025\\Pickle\\cimisStation.pickle"):
+            with open("H:\\Shared drives\\Stomato\\2025\\Pickle\\cimisStation.pickle", 'rb') as f:
                 content = pickle.load(f)
             return content
 
     def write_cimis_station_pickle(self, data):
-        if path.exists("H:\\Shared drives\\Stomato\\2024\\Pickle\\"):
-            with open("H:\\Shared drives\\Stomato\\2024\\Pickle\\cimisStation.pickle", 'wb') as f:
+        if path.exists("H:\\Shared drives\\Stomato\\2025\\Pickle\\"):
+            with open("H:\\Shared drives\\Stomato\\2025\\Pickle\\cimisStation.pickle", 'wb') as f:
                 pickle.dump(data, f)
 
     def check_for_new_cimis_stations(self, stomato_pickle):

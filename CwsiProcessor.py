@@ -188,6 +188,86 @@ class CwsiProcessor(object):
                 irrigation_ledger[date_key][hour_index] = switch_minutes
 
 
+    def update_irrigation_ledger_2(self, all_results_converted, irrigation_ledger):
+        # Todo -support measurement configurations other than 1 Hour. Currently, if the measurement configuration is
+        #  not 1 Hour, the values for the switch come totaled for w/e the measurement configuration is. Meaning, if
+        #  the measurement configuration is 15 minutes, a switch that is on would show 15 minutes for each 15 minute
+        #  interval.
+        dates_list = all_results_converted['dates']
+        switch_minutes_list = all_results_converted['daily switch']
+
+        for date, switch_minutes in zip(dates_list, switch_minutes_list):
+            date_key = date.date()
+
+            if date_key not in irrigation_ledger:
+                irrigation_ledger[date_key] = [None] * 96
+
+            hour_index = date.hour
+            minute_index = 0
+            if date.minute == 15:
+                minute_index = 1
+            elif date.minute == 30:
+                minute_index = 2
+            elif date.minute == 45:
+                minute_index = 3
+
+            data_index = hour_index * 4 + minute_index
+
+            if irrigation_ledger[date_key][data_index] is None:
+                irrigation_ledger[date_key][data_index] = switch_minutes
+        print()
+
+
+    def update_irrigation_ledger_3(self, all_results_converted, irrigation_ledger):
+        """
+        Function to handle irrigation ledger regardless of measurement configuration window.
+        It does that by using the lowest measurement window option to set up the ledger and fits the data to that ledger
+        regardless of actual config. Since it's using the lowest option, this should accommodate any config with no
+        problem.
+        This function sets up the ledger to have 288 buckets for each day, 1 bucket for every 5 minutes, which is the
+        lowest measurement configuration available from Meter. This ledger then gets filled with data regardless of
+        the config window size
+
+        :param all_results_converted:
+        :param irrigation_ledger:
+        """
+        dates_list = all_results_converted['dates']
+        switch_minutes_list = all_results_converted['daily switch']
+
+        # This is the lowest we can set the data interval in Zentra.
+        # As of 7-29, Zentra supports 5min, 10min, 15min, 20min, 30min
+        # 60min, 90min, 120min, 240min
+
+        lowest_data_interval_option = 5        # Cannot be 0, used for division as the denominator
+
+        # Caution dividing by lowest_data_interval_option if it doesn't lead to a float that can be easily cast
+        # to int because we use that value to set the size of a list
+        num_of_cubbies_per_date = int(round(24 * (60 / lowest_data_interval_option), 0))
+
+        for date, switch_minutes in zip(dates_list, switch_minutes_list):
+            date_key = date.date()
+
+            if date_key not in irrigation_ledger:
+                irrigation_ledger[date_key] = [None] * num_of_cubbies_per_date
+
+            hour_index = date.hour
+            minute_index_adjustment = int(date.minute / lowest_data_interval_option)
+
+            data_index = int(hour_index * (60 / lowest_data_interval_option) + minute_index_adjustment)
+
+            if irrigation_ledger[date_key][data_index] is None:
+                irrigation_ledger[date_key][data_index] = switch_minutes
+
+        # Expected data points per hour
+        # data_points_per_hour = []
+        # for date in dates_list:
+        #     no_none_switch_values = [val for val in irrigation_ledger[date.date()] if val is not None]
+        #     if len(no_none_switch_values) not in data_points_per_hour:
+        #         data_points_per_hour.append(len(no_none_switch_values))
+        #
+        # print()
+
+
     def clean_irrigation_ledger(self, irrigation_ledger):
         """
         Function to remove old dates from the irrigation ledger that are no longer relevant and may have been left
@@ -195,7 +275,7 @@ class CwsiProcessor(object):
         :param irrigation_ledger:
         """
         # Calculate the cutoff date
-        cutoff_date = datetime.now().date() - timedelta(days=35)
+        cutoff_date = datetime.now().date() - timedelta(days=15)
 
         # Grab keys older than cutoff date to be removed
         dates_to_remove = [date for date in irrigation_ledger if date < cutoff_date]
@@ -895,13 +975,14 @@ class CwsiProcessor(object):
         wilting_points = []
 
         for logger in field.loggers:
-            if not individual_logger:
-                field_capacities.append(float(logger.soil.field_capacity))
-                wilting_points.append(float(logger.soil.wilting_point))
-            else:
-                if logger.name == logger_name or logger.nickname == logger_name:
-                    field_capacity_avg = logger.soil.field_capacity
-                    wilting_point_avg = logger.soil.wilting_point
+            if logger.active:
+                if not individual_logger:
+                    field_capacities.append(float(logger.soil.field_capacity))
+                    wilting_points.append(float(logger.soil.wilting_point))
+                else:
+                    if logger.name == logger_name or logger.nickname == logger_name:
+                        field_capacity_avg = logger.soil.field_capacity
+                        wilting_point_avg = logger.soil.wilting_point
         if not individual_logger:
             field_capacity_avg = numpy.mean(field_capacities)
             wilting_point_avg = numpy.mean(wilting_points)
@@ -916,11 +997,16 @@ class CwsiProcessor(object):
             crop_type,
             field_name=field.name
         )
+        # Custom fix for Ex and DOugherty soil type
+        dougherty = False
+        if field.name in ['Dougherty Bros9', 'Dougherty Bros5', 'Dougherty Bros2N', 'Dougherty Bros2S', 'Dougherty BrosS7', 'Dougherty BrosD3']:
+            dougherty = True
 
         soil_moisture_desc = self.calculate_portal_soil_moisture_desc(
             soil_moisture_num,
             field_capacity_avg,
-            wilting_point_avg
+            wilting_point_avg,
+            dougherty=dougherty,
         )
         si_desc = self.calculate_portal_si_desc(crop_type, si_num)
 
@@ -1013,7 +1099,7 @@ class CwsiProcessor(object):
         return round(soil_moisture_num, 1)
 
     def calculate_portal_soil_moisture_desc(self, soil_moisture_num: float, field_capacity_avg: float,
-                                            wilting_point_avg: float) -> str:
+                                            wilting_point_avg: float, dougherty: bool = False) -> str:
         """
         Create a soil with the field capacity and wilting point we were given and then get the appropriate
         description for the soil_moisture_num based on that soil type's vwc ranges (Function already provided for
@@ -1025,6 +1111,8 @@ class CwsiProcessor(object):
         :return: String of the appropriate description
         """
         soil = Soil(field_capacity=field_capacity_avg, wilting_point=wilting_point_avg)
+        if dougherty:
+            soil = Soil('Dougherty')
         description = soil.find_vwc_range_description(soil_moisture_num)
         return description
 
@@ -1121,7 +1209,7 @@ class CwsiProcessor(object):
         pepper = defUrl + 'h5aOCK3.png'
         garlic = defUrl + 'hPjyLfU.png'
         date = defUrl + '5yyz4dJ.png'
-        hemp = defUrl + 'mvdZtjV.png'
+        hemp = defUrl + 'o0Ss80G.png'
         tangerines = defUrl + 'Fs8edNK.png'
         squash = defUrl + 'siBofu6.png'
         cherry = defUrl + 'LqbA0Ie.png'
@@ -1129,7 +1217,11 @@ class CwsiProcessor(object):
         onion = defUrl + 'H0r7Ezb.png'
         watermelon = defUrl + 'V9V5jAN.png'
         corn = defUrl + '0XBmvsz.png'
-        default = defUrl + 'B2coKxO.png'
+        seedling = defUrl + 'yiNUwJV.png'
+        asparagus = defUrl + 'INJg1oa.png'
+        cantaloupe = defUrl + 'PbTGD1X.png'
+        # default = defUrl + 'B2coKxO.png'  # pumpkin image
+        default = defUrl + 'yiNUwJV.png'  # seedling as new default
 
         return {
             'tomato': tomato,
@@ -1156,7 +1248,10 @@ class CwsiProcessor(object):
             'onions': onion,
             'corn': corn,
             'watermelon': watermelon,
-            'watermelons': watermelon
+            'watermelons': watermelon,
+            'asparagus': asparagus,
+            'cantaloupe': cantaloupe,
+            'seedling': seedling
         }.get(crop_type, default)
 
     def irrigation_ai_processing(self, data, logger):

@@ -66,27 +66,27 @@ def generate_options(list_of_items):
     ]
 
 
-# def delete_psi_values_for_specific_logger(grower_name, field_name, logger_name):
-#     growers = SharedPickle.open_pickle()
-#     dbw = DBWriter.DBWriter()
-#     project = SharedPickle.get_project(field_name, grower_name)
-#     field_dataset = dbw.remove_unwanted_chars_for_db_dataset(field_name)
-#     dml = (f"UPDATE `{project}.{field_dataset}.{logger_name}` SET psi = NULL, sdd = NULL, canopy_temperature = NULL WHERE TRUE")
-#     try:
-#         dbw.run_dml(dml, project=project)
-#         # update pickle
-#         for grower in growers:
-#             if grower.name == grower_name:
-#                 for field in grower.fields:
-#                     if field.name == field_name:
-#                         for logger in field.loggers:
-#                             if logger.name == logger_name:
-#                                 logger.ir_active = False
-#                                 logger.consecutive_ir_values = deque()
-#         SharedPickle.write_pickle(growers)
-#         return f"Cleared PSI for {logger_name} in {field_name}"
-#     except Exception as e:
-#         return f"Error clearing {logger_name}: {e}"
+def delete_psi_values_for_specific_logger(grower_name, field_names, logger_name):
+    growers = SharedPickle.open_pickle()
+    dbw = DBWriter.DBWriter()
+    project = SharedPickle.get_project(field_names[0], grower_name)
+    field_dataset = dbw.remove_unwanted_chars_for_db_dataset(field_names[0])
+    dml = (f"UPDATE `{project}.{field_dataset}.{logger_name}` SET psi = NULL, sdd = NULL, canopy_temperature = NULL WHERE TRUE")
+    try:
+        dbw.run_dml(dml, project=project)
+        # update pickle
+        for grower in growers:
+            if grower.name == grower_name:
+                for field in grower.fields:
+                    if field.name in field_names:
+                        for logger in field.loggers:
+                            if logger.name == logger_name:
+                                logger.ir_active = False
+                                logger.consecutive_ir_values = deque()
+        SharedPickle.write_pickle(growers)
+        return f"Cleared PSI for {logger_name} in {field_names}"
+    except Exception as e:
+        return f"Error clearing {logger_name}: {e}"
 
 def bulk_delete_psi(grower_name: str, fields: list[str], to_delete: list[str]) -> list[str]:
     """
@@ -565,37 +565,63 @@ def handle_submit_value(ack, body, respond):
         modify_value_selector_menu(respond, logger_list)
 
 @app.action("logger_select_delete_psi")
+@app.action("delete_start_date")
+@app.action("delete_end_date")
 @app.action("delete_confirm")
-def handle_delete_psi(ack, body, respond):
+def handle_delete_psi(ack, body, respond, logger):
     ack()
-    print('Handling delete psi')
-    user_id = body["user"]["id"]
     action_id = body["actions"][0]["action_id"]
+    user_id   = body["user"]["id"]
 
     if action_id == "logger_select_delete_psi":
-        # step 1: user picked some loggers
+        # they just picked the loggers
         selected = [opt["value"] for opt in body["actions"][0]["selected_options"]]
         user_selections[user_id]["logger_select_delete_psi"] = selected
         blocks = logger_delete_menu(selected, preselected=selected)
         respond(blocks=blocks, replace_original=True)
-        return
 
-    # step 2: user confirmed
-    grower   = user_selections[user_id]["grower"].name
-    fields   = user_selections[user_id].get("fields", [])
-    to_delete = user_selections[user_id]["logger_select_delete_psi"]
+    elif action_id == "delete_start_date":
+        user_selections[user_id]["delete_start_date"] = body["actions"][0]["selected_date"]
 
-    # call our helper
-    results = bulk_delete_psi(grower, fields, to_delete)
+    elif action_id == "delete_end_date":
+        user_selections[user_id]["delete_end_date"]   = body["actions"][0]["selected_date"]
 
-    # send back status & log
-    respond(text="\n".join(results))
-    SheetsHandler.log_request_to_sheet(
-        "Delete PSI Values",
-        body["user"]["name"],
-        f"{fields} → {to_delete}"
-    )
-    user_selections.pop(user_id, None)
+    elif action_id == "delete_confirm":
+        # now do the deletion using whatever dates they picked (or none)
+        grower = user_selections[user_id]["grower"]
+        fields  = user_selections[user_id]["fields"]
+        to_delete = user_selections[user_id]["logger_select_delete_psi"]
+
+        start = user_selections[user_id].get("delete_start_date")
+        end   = user_selections[user_id].get("delete_end_date")
+
+        results = []
+        for field_name in fields:
+            for lg in to_delete:
+                if start and end:
+                    # call a helper that takes date‐range
+                    results.append(
+                        delete_psi_values_for_logger_and_range(
+                            grower.name, field_name, lg, start, end
+                        )
+                    )
+                else:
+                    # wipe all
+                    results.append(
+                        delete_psi_values_for_specific_logger(
+                            grower.name, field_name, lg
+                        )
+                    )
+
+        respond(text="\n".join(results))
+        SheetsHandler.log_request_to_sheet(
+            "Delete PSI Values",
+            body["user"]["name"],
+            f"{fields} → {to_delete} ({start} to {end})"
+        )
+        user_selections.pop(user_id, None)
+
+
 
 
 def get_selected_value(state, block_id, action_id):
@@ -610,21 +636,84 @@ def get_selected_values(state, action_id):
     return []
 
 def logger_delete_menu(logger_list, preselected=None):
-    logger_action_id = 'logger_select_delete_psi'
-    logger_block = logger_select_block(logger_list, logger_action_id, initial_selected=preselected)
+    # 1) Logger selector
+    options = generate_options(logger_list)
+    initial_opts = []
+    if preselected:
+        valid = {o["value"] for o in options}
+        initial_opts = [o for o in options if o["value"] in preselected and o["value"] in valid]
+
+    logger_block = {
+        "type": "section",
+        "block_id": "delete_logger_block",
+        "text": {"type": "mrkdwn", "text": "Choose logger(s) whose PSI to delete:"},
+        "accessory": {
+            "type": "multi_static_select",
+            "action_id": "logger_select_delete_psi",
+            "placeholder": {"type": "plain_text", "text": "Select logger(s)", "emoji": True},
+            "options": options,
+            **({"initial_options": initial_opts} if initial_opts else {})
+        }
+    }
+
+    # 2) Context/info
+    info_block = {
+        "type": "context",
+        "elements": [
+            {"type": "mrkdwn", "text": "*Optional:* specify a date range — leave both blank to wipe *all* PSI values."}
+        ]
+    }
+
+    # 3) Start‐date picker
+    start_date_block = {
+        "type": "input",
+        "block_id": "delete_start_date_block",
+        "optional": True,
+        "label": {"type": "plain_text", "text": "Start date", "emoji": True},
+        "element": {
+            "type": "datepicker",
+            "action_id": "delete_start_date",
+            "placeholder": {"type": "plain_text", "text": "Select a start date"}
+        }
+    }
+
+    # 4) End‐date picker
+    end_date_block = {
+        "type": "input",
+        "block_id": "delete_end_date_block",
+        "optional": True,
+        "label": {"type": "plain_text", "text": "End date", "emoji": True},
+        "element": {
+            "type": "datepicker",
+            "action_id": "delete_end_date",
+            "placeholder": {"type": "plain_text", "text": "Select an end date"}
+        }
+    }
+
+    # 5) Confirm button
     confirm_block = {
         "type": "actions",
+        "block_id": "delete_confirm_block",
         "elements": [
             {
                 "type": "button",
-                "text": {"type": "plain_text", "text": "Confirm Delete"},
-                "style": "danger",
                 "action_id": "delete_confirm",
+                "style": "danger",
+                "text": {"type": "plain_text", "text": "Confirm Delete", "emoji": True},
                 "value": "confirm"
             }
         ]
     }
-    return [logger_block, confirm_block]
+
+    return [
+        logger_block,
+        info_block,
+        start_date_block,
+        end_date_block,
+        confirm_block
+    ]
+
+
 
 def modify_value_selector_menu(respond, logger_list):
     """Show menu for selecting attribute to modify."""
@@ -1356,7 +1445,7 @@ def delete_psi_menu(ack, respond, grower_names):
     respond(response)
 
 
-def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str, new_soil_type: str):
+def change_logger_soil_type(logger_name: str, field_names: str, grower_name: str, new_soil_type: str):
     """
     Single function to change the soil type for a logger in both the pickle and the db
 
@@ -1376,7 +1465,7 @@ def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str,
     for grower in growers:
         if grower.name == grower_name:
             for field in grower.fields:
-                if field.name == field_name:
+                if field.name in field_names:
                     for logger in field.loggers:
                         if logger.name == logger_name:
                             print('\tFound logger...changing')
@@ -1391,7 +1480,7 @@ def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str,
     # Change soil type parameters in the DB
     if crop_type:
         print('-Changing soil type in the db')
-        field_name_db = dbw.remove_unwanted_chars_for_db_dataset(field_name)
+        field_name_db = dbw.remove_unwanted_chars_for_db_dataset(field_names[0])
         db_project = dbw.get_db_project(crop_type)
         dml = (f'UPDATE `{db_project}.{field_name_db}.{logger_name}` '
                f'SET field_capacity = {field_capacity}, wilting_point = {wilting_point} '
@@ -1403,6 +1492,90 @@ def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str,
         print()
     else:
         print('Error: problem finding logger')
+
+def delete_psi_range(grower_name, field_name, logger_name, start_date, end_date):
+    dbw = DBWriter.DBWriter()
+    project = SharedPickle.get_project(field_name, grower_name)
+    ds = dbw.remove_unwanted_chars_for_db_dataset(field_name)
+    table = logger_name
+    # only null psi/sdd/temperature between your dates
+    dml = (
+      f"UPDATE `{project}.{ds}.{table}` "
+      f"SET psi=NULL, sdd=NULL, canopy_temperature=NULL "
+      f"WHERE date BETWEEN '{start_date}' AND '{end_date}'"
+    )
+    try:
+      dbw.run_dml(dml, project=project)
+      # also update in-memory pickle
+      for grower in SharedPickle.open_pickle():
+        if grower.name==grower_name:
+          for f in grower.fields:
+            if f.name==field_name:
+              for lg in f.loggers:
+                if lg.name==logger_name:
+                  # you could remove only those dates from lg.consecutive_ir_values,
+                  # but simplest is to clear entirely
+                  lg.ir_active=False
+                  lg.consecutive_ir_values.clear()
+      SharedPickle.write_pickle( SharedPickle.open_pickle() )
+      return f"[{start_date}→{end_date}] Cleared PSI for {logger_name} in {field_name}"
+    except Exception as e:
+      return f"Error clearing {logger_name} in {field_name}: {e}"
+
+def delete_psi_values_for_logger_and_range(
+    grower_name: str,
+    field_name:  str,
+    logger_name: str,
+    start_date:  str,
+    end_date:    str
+) -> str:
+    """
+    Null out psi, sdd and canopy_temperature for a single logger
+    between start_date and end_date (inclusive).
+
+    :param grower_name: name of the grower
+    :param field_name:   name of the field
+    :param logger_name:  name of the logger/table
+    :param start_date:   'YYYY-MM-DD'
+    :param end_date:     'YYYY-MM-DD'
+    :returns:            a status message
+    """
+    # 1) Load your pickle once
+    growers = SharedPickle.open_pickle()
+    dbw     = DBWriter.DBWriter()
+    project = SharedPickle.get_project(field_name, grower_name)
+    f_name = dbw.remove_unwanted_chars_for_db_dataset(field_name)
+    table   = logger_name
+
+    # 2) Construct a DML that filters by your date column (assuming it's called `date`)
+    dml = f"""
+      UPDATE `{project}.{f_name}.{table}`
+      SET psi = NULL, sdd = NULL, canopy_temperature = NULL
+      WHERE date BETWEEN '{start_date}' AND '{end_date}'
+    """
+
+    try:
+        # 3) Execute against BigQuery
+        dbw.run_dml(dml, project=project)
+
+        # 4) Also update your in-memory pickle so future toggles know IR is off
+        for g in growers:
+            if g.name != grower_name:
+                continue
+            for f in g.fields:
+                if f.name != field_name:
+                    continue
+                for lg in f.loggers:
+                    if lg.name == logger_name:
+                        lg.ir_active = False
+                        lg.consecutive_ir_values.clear()
+
+        SharedPickle.write_pickle(growers)
+
+        return f"✅ Cleared PSI for {logger_name} in {field_name} from {start_date} to {end_date}"
+
+    except Exception as e:
+        return f"❌ Error clearing PSI for {logger_name}: {e}"
 
 # Entry point for Google Cloud Functions
 @flask_app.route('/slack/events', methods=['POST'])

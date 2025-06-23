@@ -1,6 +1,3 @@
-import io
-import sys
-
 import uuid
 
 from google.cloud import bigquery
@@ -9,7 +6,8 @@ from DBWriter import DBWriter
 from Notifications import AllNotifications
 from Technician import Technician
 
-FIELD_PORTALS_BIGQUERY_PROJECT = 'growers-2024'
+YEAR = '2025'
+FIELD_PORTALS_BIGQUERY_PROJECT = f'growers-{YEAR}'
 
 
 class Grower(object):
@@ -80,12 +78,20 @@ class Grower(object):
             write_to_db: bool = False,
             check_for_notifications: bool = False,
             check_updated: bool = False,
-            subtract_from_mrid: int = 0
+            subtract_from_mrid: int = 0,
+            specific_mrid: int = None,
+            zentra_api_version: str = 'v1',
+            specific_start_date: str = None,
+            specific_end_date: str = None,
     ):
         """
         Function used to update each fields information. This function will be called every day.
         This function then calls the update function on each of its plots[]
 
+        :param specific_mrid:
+        :param specific_start_date: String date in the format: m-d-Y H:M
+        :param specific_end_date: String date in the format: m-d-Y H:M
+        :param zentra_api_version:
         :param subtract_from_mrid: Int used to subtract a specific amount from the logger MRIDs for API calls
         :param cimis_stations_pickle:
         :param check_updated:
@@ -115,10 +121,20 @@ class Grower(object):
                         print("Error type: " + str(e))
 
                 for field in self.fields:
-                    field.update(cimis_stations_pickle, get_weather=get_weather, get_data=get_data,
-                                 write_to_portal=write_to_portal, write_to_db=write_to_db,
-                                 check_for_notifications=check_for_notifications, check_updated=check_updated,
-                                 subtract_from_mrid=subtract_from_mrid)
+                    field.update(
+                        cimis_stations_pickle,
+                        get_weather=get_weather,
+                        get_data=get_data,
+                        write_to_portal=write_to_portal,
+                        write_to_db=write_to_db,
+                        check_for_notifications=check_for_notifications,
+                        check_updated=check_updated,
+                        subtract_from_mrid=subtract_from_mrid,
+                        specific_mrid=specific_mrid,
+                        zentra_api_version=zentra_api_version,
+                        specific_start_date=specific_start_date,
+                        specific_end_date=specific_end_date,
+                    )
 
                 self.check_successful_updated_fields()
 
@@ -177,7 +193,7 @@ class Grower(object):
                 bigquery.SchemaField("preview", "STRING"),
                 bigquery.SchemaField("logger_name", "STRING"),
                 bigquery.SchemaField("logger_direction", "STRING"),
-                bigquery.SchemaField("location", "STRING")
+                bigquery.SchemaField("location", "STRING"),
             ]
             table = dbwriter.create_table(
                 grower_name, 'loggers', loggers_table_schema,
@@ -186,39 +202,23 @@ class Grower(object):
 
     def to_string(self, include_fields: bool = True):
         """
-        Function to capture the output that would be printed to the console.
-
-        :param include_fields: Whether to include the fields' string representations.
-        :return: A string containing the captured output.
+        Function used to print out output to screen. Prints out the Plot type.
+        Then this calls on its loggers list and has each object in the list call its own toString function
+        :return:
         """
-        # Create a StringIO object to capture the output
-        output = io.StringIO()
-        # Save the original stdout
-        original_stdout = sys.stdout
-        # Redirect stdout to the StringIO object
-        sys.stdout = output
-
-        try:
-            # Output the details to the StringIO object (which is captured instead of printed)
-            tech_str = f'Tech: {str(self.technician.name)}'
-            region_str = f'Region: {self.region}'
-            print()
-            print(
-                '*****************************************************************************************************************************'
-            )
-            print(f'\tGrower: {self.name}')
-            print(f'\t{tech_str:40} | Active: {str(self.active)}')
-            print(f'\t{region_str:40} | Updated: {str(self.updated)}')
-            print()
-            if include_fields:
-                for f in self.fields:
-                    f.to_string()
-        finally:
-            # Restore the original stdout
-            sys.stdout = original_stdout
-
-        # Get the string from the StringIO object
-        return output.getvalue()
+        tech_str = f'Tech: {str(self.technician.name)}'
+        region_str = f'Region: {self.region}'
+        print()
+        print(
+            '*****************************************************************************************************************************'
+        )
+        print(f'\tGrower: {self.name}')
+        print(f'\t{tech_str:40} | Active: {str(self.active)}')
+        print(f'\t{region_str:40} | Updated: {str(self.updated)}')
+        print()
+        if include_fields:
+            for f in self.fields:
+                f.to_string()
 
     def deactivate(self):
         print('Deactivating Grower {}...'.format(self.name))

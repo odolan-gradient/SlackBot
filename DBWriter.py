@@ -245,6 +245,10 @@ class DBWriter(object):
             'onio': LOGGERS_BIGQUERY_PROJECT,
             'wate': LOGGERS_BIGQUERY_PROJECT,
             'corn': LOGGERS_BIGQUERY_PROJECT,
+            'seed': LOGGERS_PERMANENT_BIGQUERY_PROJECT,
+            'aspa': LOGGERS_PERMANENT_BIGQUERY_PROJECT,
+            'cant': LOGGERS_BIGQUERY_PROJECT,
+            'hemp': LOGGERS_BIGQUERY_PROJECT,
         }.get(crop, '')
 
     def return_query_dict(self, dml, col1, col2, project, job_config=None):
@@ -285,11 +289,11 @@ class DBWriter(object):
     def add_ai_columns_to_all_tables(self, project='stomato'):
         # Construct a BigQuery client object.
         client = self.grab_bq_client(my_project=project)
-        datasets = dbwriter.get_datasets(project=project)
+        datasets = self.get_datasets(project=project)
         for d in datasets[0]:
             if d.dataset_id == 'ET':
                 continue
-            tables = dbwriter.get_tables(d.dataset_id, project=project)
+            tables = self.get_tables(d.dataset_id, project=project)
             for t in tables:
                 table_id = project + '.' + d.dataset_id + "." + t.table_id
 
@@ -322,14 +326,14 @@ class DBWriter(object):
     def add_gdd_columns_to_all_tables(self, project='stomato'):
         # Construct a BigQuery client object.
         client = self.grab_bq_client(my_project=project)
-        datasets = dbwriter.get_datasets(project=project)
+        datasets = self.get_datasets(project=project)
         for d in datasets[0]:
 
             if d.dataset_id == 'ET' or d.dataset_id == 'Meza' or d.dataset_id == 'Historical_ET':
                 continue
             print(d.dataset_id)
             if d.dataset_id == 'Nees_AI':
-                tables = dbwriter.get_tables(d.dataset_id, project=project)
+                tables = self.get_tables(d.dataset_id, project=project)
                 for t in tables:
 
                     if t.table_id == 'weather_forecast' or 'Irr_Scheduling' in t.table_id or 'z6' in t.table_id or '5G' in t.table_id:
@@ -366,12 +370,12 @@ class DBWriter(object):
     def delete_all_temp_tables(self, project='stomato'):
         # Construct a BigQuery client object.
         client = self.grab_bq_client(my_project=project)
-        datasets = dbwriter.get_datasets(project=project)
+        datasets = self.get_datasets(project=project)
         for d in datasets[0]:
             if d.dataset_id == 'ET' or d.dataset_id == 'Historical_ET':
                 continue
             # print(d.dataset_id)
-            tables = dbwriter.get_tables(d.dataset_id, project=project)
+            tables = self.get_tables(d.dataset_id, project=project)
             for t in tables:
                 if '_temp' in t.table_id:
                     client.delete_table(t.table_id, not_found_ok=True)
@@ -381,13 +385,13 @@ class DBWriter(object):
     def merge_all_tables_for_gdd(self, project='stomato'):
         # Construct a BigQuery client object.
         client = self.grab_bq_client(my_project=project)
-        datasets = dbwriter.get_datasets(project=project)
+        datasets = self.get_datasets(project=project)
         for d in datasets[0]:
             if d.dataset_id == 'ET' or d.dataset_id == 'Historical_ET':
                 continue
             # print(d.dataset_id)
             if d.dataset_id == 'Nees_AI':
-                tables = dbwriter.get_tables(d.dataset_id, project=project)
+                tables = self.get_tables(d.dataset_id, project=project)
                 for t in tables:
                     if '_temp' in t.table_id:
                         table_id = t.table_id[:-5]
@@ -403,16 +407,16 @@ class DBWriter(object):
                                           "id = s.id, " \
                                           "planting_date = s.planting_date"
 
-                        result = dbwriter.run_dml(dml_statement, project=project)
+                        result = self.run_dml(dml_statement, project=project)
 
         print('Done')
 
     def list_db(self, project='stomato'):
-        datasets, project = dbwriter.get_datasets(project=project)
+        datasets, project = self.get_datasets(project=project)
         for dataset in datasets:
             if dataset.dataset_id == 'ET':
                 print(dataset.dataset_id)
-                dbwriter.list_tables(dataset.dataset_id, project=project)
+                self.list_tables(dataset.dataset_id, project=project)
 
     def get_specific_dataset(self, dataset, project='stomato'):
         datasets, project = self.get_datasets(project=project)
@@ -431,8 +435,8 @@ class DBWriter(object):
         except NotFound:
             print("\tTable {} is not found.".format(table_id))
             return False
-    def check_if_dataset_exists(self, dataset, project='stomato-2024'):
-        dataset_id = project + '.' + dataset
+    def check_if_dataset_exists(self, dataset, project=f'stomato-{DATABASE_YEAR}'):
+        dataset_id = "`" + project + '.' + dataset + "`"
         client = self.grab_bq_client(my_project=project)
         try:
             client.get_dataset(dataset_id)  # Make an API request.
@@ -456,12 +460,12 @@ class DBWriter(object):
 
     def update_overflow_switch_irr_hours_for_date_by_adding(self, gpm, acres, field, logger, overflow_switch_minutes, date):
         # Create Logger object to rename field to DB style
-        field_db = dbwriter.remove_unwanted_chars_for_db_dataset(field)
+        field_db = self.remove_unwanted_chars_for_db_dataset(field)
         # Calculate daily hours, flow, and inches using Switch Data
         overflow_switch_hours = overflow_switch_minutes / 60
         flow = round((overflow_switch_minutes * float(gpm)) / float(acres))
         dailyInches = flow / 27154
-        project = dbwriter.get_db_project(logger.crop_type)
+        project = self.get_db_project(logger.crop_type)
         # Set up and run Query
         try:
             dml = "UPDATE `" + project + "." + str(field_db) + "." + str(logger.name) + "`" \
@@ -470,7 +474,7 @@ class DBWriter(object):
                 ) + ", daily_hours = daily_hours + " + \
                   str(overflow_switch_hours) + ", daily_inches = daily_inches +" \
                   + str(dailyInches) + " WHERE date = '" + str(date) + "'"
-            dbwriter.run_dml(dml, project=project)
+            self.run_dml(dml, project=project)
         except Exception as error_message:
             print(error_message)
             print("Error occured when updating overflow switch data")
@@ -480,19 +484,19 @@ class DBWriter(object):
         gpm = logger.gpm
         acres = logger.irrigation_set_acres
         # Create Logger object to rename field to DB style
-        field_db = dbwriter.remove_unwanted_chars_for_db_dataset(field)
+        field_db = self.remove_unwanted_chars_for_db_dataset(field)
         # Calculate daily hours, flow, and inches using Switch Data
         overflow_switch_hours = overflow_switch_minutes / 60
         flow = round((overflow_switch_minutes * float(gpm)) / float(acres))
         dailyInches = flow / 27154
-        project = dbwriter.get_db_project(logger.crop_type)
+        project = self.get_db_project(logger.crop_type)
         # Set up and run Query
         try:
             dml = f"UPDATE `{project}.{str(field_db)}.{str(logger.name)}`" \
                   + f" SET daily_switch = {str(overflow_switch_minutes)}"\
                   + f", daily_hours = {str(overflow_switch_hours)}"\
                   + f", daily_inches = {str(dailyInches)} WHERE date = '{str(date)}'"
-            dbwriter.run_dml(dml, project=project)
+            self.run_dml(dml, project=project)
         except Exception as error_message:
             print(error_message)
             print("Error occured when updating overflow switch data")

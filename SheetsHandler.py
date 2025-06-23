@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 from datetime import datetime
 import sys
 
+import SharedPickle
+
 load_dotenv()
 
 # Load credentials from the environment or a JSON file
@@ -137,6 +139,8 @@ def billing_report_new_tab(growers):
         # Collect data for new fields of the current grower
         grower_data = []
         for field in grower.fields:
+            if field.name == 'Mumma BrosMU90':
+                pass
             unique_field_identifier = f'{grower.name}{field.nickname}'
             if unique_field_identifier not in recorded_fields:
                 install_dates = ', '.join(

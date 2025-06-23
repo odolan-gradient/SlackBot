@@ -218,14 +218,17 @@ def update_information(get_weather: bool = False, get_data: bool = False, write_
                 technician = grower.technician
                 # technician.all_notifications.write_all_notifications_to_txt(technician.name, g.name)
                 # technician.all_notifications.write_all_notifications_to_html(technician.name, g.name)
-                technician.all_notifications.write_all_notifications_to_html_v2(technician.name, grower.name)
+                notif_flags = technician.all_notifications.write_all_notifications_to_html_v2(technician.name, grower.name, notif_flags)
                 technician.all_notifications.clear_all_notifications()
 
     if check_for_notifications and email_notifications:
         all_technicians = get_all_technicians(growers)
         for tech in all_technicians:
             # list_of_notifcation_files.append(tech.notification_file_path)
-            tech.all_notifications.email_all_notifications(tech.name, tech.email, file_type='html')
+            tech.all_notifications.email_all_notifications(tech.name, tech.email, notif_flags, file_type='html')
+
+    # Update the combined grower portal
+    combined_grower_table(target_datasets=['Ray_Yeung'])
 
     # Write pickle with updated information after update
     print('Writing data to pickle-')
@@ -240,8 +243,8 @@ def update_information(get_weather: bool = False, get_data: bool = False, write_
     update_information_elapsed_time_seconds = int(update_information_elapsed_time_seconds % 60)
 
     print(f"Update Information execution time: {update_information_elapsed_time_hours}:"
-          + f"{update_information_elapsed_time_minutes}:"
-          + f"{update_information_elapsed_time_seconds} (hours:minutes:seconds)")
+            + f"{update_information_elapsed_time_minutes}:"
+            + f"{update_information_elapsed_time_seconds} (hours:minutes:seconds)")
     print()
     print()
 
@@ -481,6 +484,28 @@ def deactivate_logger(grower_name: str, field_name: str, logger_id: str) -> bool
     write_pickle(growers)
     return success
 
+def activate_logger(grower_name: str, field_name: str, logger_id: str) -> bool:
+    """
+    Function to activate a logger
+
+    :param grower_name:
+    :param field_name:
+    :param logger_id:
+    :return: success - Boolean of whether a logger was successfully deactivated or not
+    """
+    success = False
+    growers = open_pickle()
+    for g in growers:
+        if g.name == grower_name:
+            for f in g.fields:
+                if f.name == field_name:
+                    for logger in f.loggers:
+                        if logger.id == logger_id:
+                            print('Logger {} found and activated'.format(logger.id))
+                            logger.active = True
+    write_pickle(growers)
+    return success
+
 
 def remove_grower(grower_name: str) -> None:
     """
@@ -592,7 +617,12 @@ def only_certain_growers_update(
         write_to_portal: bool = False,
         write_to_db: bool = False,
         check_for_notifications: bool = False,
-        subtract_from_mrid: int = 0
+        subtract_from_mrid: int = 0,
+        specific_mrid: int = None,
+        zentra_api_version: str = 'v1',
+        specific_start_date: str = None,
+        specific_end_date: str = None,
+
 ) -> None:
     """
     Function to only update certain growers
@@ -625,7 +655,11 @@ def only_certain_growers_update(
                 write_to_portal=write_to_portal,
                 write_to_db=write_to_db,
                 check_for_notifications=check_for_notifications,
-                subtract_from_mrid=subtract_from_mrid
+                subtract_from_mrid=subtract_from_mrid,
+                specific_mrid=specific_mrid,
+                zentra_api_version=zentra_api_version,
+                specific_start_date=specific_start_date,
+                specific_end_date=specific_end_date,
             )
     write_pickle(allGrowers)
 
@@ -638,11 +672,17 @@ def only_certain_growers_field_update(
         write_to_portal: bool = False,
         write_to_db: bool = False,
         check_for_notifications: bool = False,
-        subtract_from_mrid: int = 0
+        subtract_from_mrid: int = 0,
+        specific_mrid: int = None,
+        zentra_api_version: str = 'v1',
+        specific_start_date: str = None,
+        specific_end_date: str = None,
 ) -> None:
     """
     Function to only update a certain field for a grower
 
+    :param zentra_api_version:
+    :param specific_mrid:
     :param subtract_from_mrid:
     :param grower_name: String of grower name
     :param field_name: String of field name
@@ -663,13 +703,17 @@ def only_certain_growers_field_update(
                     for logger in f.loggers:
                         logger.updated = False
                     f.update(
-                        cimis_stations_pickle=cimis_stations_pickle,
+                        cimis_stations_pickle = cimis_stations_pickle,
                         get_weather=get_weather,
                         get_data=get_data,
                         write_to_portal=write_to_portal,
                         write_to_db=write_to_db,
                         check_for_notifications=check_for_notifications,
-                        subtract_from_mrid=subtract_from_mrid
+                        subtract_from_mrid=subtract_from_mrid,
+                        specific_mrid=specific_mrid,
+                        zentra_api_version=zentra_api_version,
+                        specific_start_date=specific_start_date,
+                        specific_end_date=specific_end_date,
                     )
     write_pickle(allGrowers)
 
@@ -682,11 +726,17 @@ def only_certain_growers_fields_update(
         write_to_db: bool = False,
         check_for_notifications: bool = False,
         subtract_from_mrid: int = 0,
-        specific_mrid=None
+        specific_mrid: int = None,
+        zentra_api_version: str = 'v1',
+        specific_start_date: str = None,
+        specific_end_date: str = None,
 ) -> None:
     """
     Function to only update certain fields
 
+    :param zentra_api_version:
+    :param specific_mrid:
+    :param subtract_from_mrid:
     :param fields: List of strings
     :param get_et: Boolean, True if you want to get ET, False otherwise
     :param get_weather: Boolean, True if you want to get Weather, False otherwise
@@ -711,7 +761,10 @@ def only_certain_growers_fields_update(
                     write_to_db=write_to_db,
                     check_for_notifications=check_for_notifications,
                     subtract_from_mrid=subtract_from_mrid,
-                    specific_mrid=specific_mrid
+                    specific_mrid=specific_mrid,
+                    zentra_api_version=zentra_api_version,
+                    specific_start_date=specific_start_date,
+                    specific_end_date=specific_end_date,
                 )
     write_pickle(allGrowers)
 
@@ -724,11 +777,16 @@ def only_certain_growers_field_logger_update(
         write_to_db: bool = False,
         check_for_notifications: bool = False,
         specific_mrid: float = None,
-        subtract_from_mrid: float = 0
+        subtract_from_mrid: float = 0,
+        zentra_api_version: str = 'v1',
+        specific_start_date: str = None,
+        specific_end_date: str = None,
 ) -> None:
     """
     Function to update a specific Logger
 
+    :param zentra_api_version:
+    :param logger_id:
     :param grower_name: String of grower name
     :param field_name: String of field name
     :param logger_name: String of logger ID
@@ -747,17 +805,23 @@ def only_certain_growers_field_logger_update(
                 if field.name == field_name:
                     field.updated = False
                     for logger in field.loggers:
-                        if len(logger_name) > 0 and logger.name == logger_name:
-                            logger_to_update = logger
-                        if len(logger_id) > 0 and logger.id == logger_id:
+                        # if len(logger_name) > 0 and logger.name == logger_name:
+                        #     logger_to_update = logger
+                        # if len(logger_id) > 0 and logger.id == logger_id:
+                        #     logger_to_update = logger
+                        if logger.id == logger_id and logger.name == logger_name:  # check both in case theres two loggers with the same name (logger swap)
                             logger_to_update = logger
                         if logger_to_update is not None:
                             logger_to_update.updated = False
                             logger_to_update.update(
                                 cimis_stations_pickle,
                                 write_to_db=write_to_db,
-                                check_for_notifications=check_for_notifications, specific_mrid=specific_mrid,
-                                subtract_from_mrid=subtract_from_mrid
+                                check_for_notifications=check_for_notifications,
+                                specific_mrid=specific_mrid,
+                                subtract_from_mrid=subtract_from_mrid,
+                                zentra_api_version=zentra_api_version,
+                                specific_start_date=specific_start_date,
+                                specific_end_date=specific_end_date,
                             )
                             break
     write_pickle(all_growers)
@@ -801,7 +865,8 @@ def setup_field(
         crop_type,
         grower=None,
         active=True,
-        field_type='Commercial'
+        field_type='Commercial',
+        field_name_ms='NA'
 ):
     """
     Function to create a Field object
@@ -818,8 +883,18 @@ def setup_field(
     :return:
     """
     loggers = []
-    field = Field(field_name, loggers, lat, long, cimis_station, acres, crop_type, grower=grower, active=active,
-                  field_type=field_type)
+    field = Field(
+        field_name, loggers,
+        lat,
+        long,
+        cimis_station,
+        acres,
+        crop_type,
+        grower=grower,
+        active=active,
+        field_type=field_type,
+        field_name_ms=field_name_ms
+    )
     return field
 
 
@@ -920,6 +995,31 @@ def get_acres(field_name: str, logger_name: str) -> float:
                     if log.name == logger_name:
                         # print(log.acres)
                         return log.irrigation_set_acres
+
+
+def get_total_acres(region=None) -> float:
+    """
+    Function to get all gradient acres
+
+    :param region: North or South option
+    :param logger_name: String of the logger name
+    :param field_name: String of the field name
+    :return: Float of the acres
+    """
+    growers = open_pickle()
+    total_acres = 0
+    if region is None:  # Get all acres
+        for g in growers:
+            for f in g.fields:
+                # if f.crop_type == 'Tomatoes':
+                total_acres += float(f.acres)
+    else:
+        for g in growers:
+            if g.region == region:
+                for f in g.fields:
+                    # if f.crop_type == 'Tomatoes':
+                    total_acres += float(f.acres)
+    return total_acres
 
 
 def show_grower(grower_name: str) -> None:
@@ -1165,27 +1265,30 @@ def write_all_et_values_to_db(all_cimis_station_et, overwrite: bool = False):
     ]
     filename = 'all et.csv'
 
-    for et_data_dict_key in all_cimis_station_et:
-        if all_cimis_station_et is not None:
-            db_dates_list = [date for date in all_cimis_station_et[et_data_dict_key]['dates']]
-            # Remove any duplicates in the DB based on the dates if ET table exists
-            if dbwriter.check_if_table_exists(dataset_id, et_data_dict_key, project=project):
-                remove_duplicates_already_in_et_db(db_dates_list, et_data_dict_key)
+    if all_cimis_station_et is not None:
+        for et_data_dict_key in all_cimis_station_et:
+            dates = all_cimis_station_et[et_data_dict_key]['dates']
+            active = all_cimis_station_et[et_data_dict_key]['station'].active
+            if dates and active:
+                # Remove any duplicates in the DB based on the dates if ET table exists and active station
+                table_exists = dbwriter.check_if_table_exists(dataset_id, et_data_dict_key, project=project)
+                if table_exists:
+                    remove_duplicates_already_in_et_db(dates, et_data_dict_key)
 
-        # Write to the ET table in DB
-        print(f'\tWriting station {et_data_dict_key} data to csv')
-        keys = ["dates", "eto"]
-        just_et_data = {key: all_cimis_station_et[et_data_dict_key][key] for key in keys}
+            # Write to the ET table in DB
+            print(f'\tWriting station {et_data_dict_key} data to csv')
+            keys = ["dates", "eto"]
+            just_et_data = {key: all_cimis_station_et[et_data_dict_key][key] for key in keys}
 
-        with open(filename, "w", newline='') as outfile:
-            writer = csv.writer(outfile)
-            writer.writerow(just_et_data.keys())
-            writer.writerows(zip_longest(*just_et_data.values()))
-        print('\t\t<-csv Done')
+            with open(filename, "w", newline='') as outfile:
+                writer = csv.writer(outfile)
+                writer.writerow(just_et_data.keys())
+                writer.writerows(zip_longest(*just_et_data.values()))
+            print('\t\t<-csv Done')
 
-        table_id = et_data_dict_key
-        print('\tWriting to DB')
-        dbwriter.write_to_table_from_csv(dataset_id, table_id, filename, schema, project, overwrite)
+            table_id = et_data_dict_key
+            print('\tWriting to DB')
+            dbwriter.write_to_table_from_csv(dataset_id, table_id, filename, schema, project, overwrite)
 
 
 def write_et_values_specific_station(start_date: str, end_date: str, cimis_station: str) -> None:
@@ -1297,7 +1400,30 @@ def failed_cimis_update_et_from_prev_day_eto():
 
 def reset_updated_all():
     """
-    Reset the updated boolean for all growers, fields and loggers
+    Reset the updated boolean for all growers, fields and loggers as well as cimis stations
+
+    """
+    reset_updated_growers()
+    reset_updated_cimis_stations()
+
+
+def reset_updated_cimis_stations():
+    """
+    Loops through all cimis stations in the cimis station pickle and sets their updated boolean to False, then write
+    back to the cimis station pickle
+
+    """
+    print('Resetting updated on all cimis stations')
+    cimisStationsPickle = CimisStation.open_cimis_station_pickle(CimisStation)
+    for stations in cimisStationsPickle:
+        stations.updated = False
+    write_pickle(cimisStationsPickle, filename="cimisStation.pickle")
+
+
+def reset_updated_growers():
+    """
+    Loops through all growers in the pickle and sets their own, each of their fields, and each of their fields' loggers
+    updated booleans to False, then write back to the pickle
 
     """
     print('Resetting updated on all growers')
@@ -3456,66 +3582,370 @@ def subtract_from_dxd_mrid(logger_id: int, subtract_from_mrid: int = 0):
 
 def update_historical_et_stations():
     """
-    Update the Historical ET table for each station with the new years etos from our BQ
-    and recalculate average
-    In this iteration going to try
-    1. Pull Hist Et Table from BQ -> dict
-    2. Pull CIMIS data and add to Hist Et dict
-    3. Add new key/column to dict and recalculate average
-    4. Write back to the DB
+    Update the Historical ET table for each station with the previous year's ETos from our BQ
+    and recalculate average.
     """
     db = DBWriter()
     cimis = CIMIS()
     project = 'stomato-info'
     hist_dataset_id = 'Historical_ET'
-    # TODO: some Hist ET tables have different years than others, need to take that in account with the prev_year, maybe a retry on the grab_all_table_data changing the order by each time
     current_year = datetime.now().year
     prev_year = current_year - 1
-    start_of_year = date(2023, 1, 1)
-    end_of_year = date(2023, 12, 31)
+
+    start_of_year = date(prev_year, 1, 1)
+    end_of_year = date(prev_year, 12, 31)
 
     hist_et_tables = db.get_tables(hist_dataset_id, project=project)
 
     for table in hist_et_tables:
-
         station_number = table.table_id
         print(f"Updating Historical ET for station {station_number}")
-        # Get historical ET table from BigQuery and convert to a dictionary
-        # Retry mechanism
-        while True:
-            try:
-                bq_table, table_info = db.grab_all_table_data(hist_dataset_id, station_number, project,
-                                                              order_by=f'Year_{prev_year}')
-                if bq_table is not None:
-                    break  # Exit loop if data is successfully fetched
-            except Exception as e:
-                print(f"Error fetching data for Year_{prev_year - 1}: {e}")
-                prev_year -= 1  # Decrement year and retry
+
+        try:
+            # Fetch data from BigQuery
+            bq_table = db.grab_all_table_data(
+                hist_dataset_id,
+                station_number,
+                project,
+                order_by=f'Year_{prev_year-1}'
+            )
+
+            if not bq_table:
+                print(f"No data found for station {station_number}. Skipping.")
+                continue
+
+        except Exception as e:
+            print(f"Error fetching data for station {station_number}: {e}")
             continue
 
-        # Pull CIMIS data
+        # CIMIS API Call
+        print(f"Querying CIMIS API for station {station_number}")
         et_data = cimis.getDictForStation(station_number, start_of_year, end_of_year)
 
-        # Add new columns to the dictionary
+        if not et_data or "dates" not in et_data or "eto" not in et_data:
+            print(f"Missing or invalid CIMIS data for station {station_number}. Skipping.")
+            continue
+
+        # Process rows and update data
+        updated_rows = []
         for i, row in enumerate(bq_table):
-            row[f'Year_{current_year}'] = et_data["dates"][i]
-            row[f'Year_{current_year}_ET'] = et_data["eto"][i]
+            row_dict = dict(row)  # Convert row to mutable dictionary
+            if i < len(et_data["dates"]):
+                row_dict[f'Year_{prev_year}'] = et_data["dates"][i]
+                row_dict[f'Year_{prev_year}_ET'] = et_data["eto"][i]
+            updated_rows.append(row_dict)
 
-            # Calculate average if needed
-            # row['Average'] = (row.get(f'Year_{prev_year}_ET', 0) + row[f'Year_{current_year}_ET']) / 2
+        # Dynamically retrieve and update the schema in BigQuery
+        client = db.grab_bq_client(my_project=project)
+        table_ref = f"{project}.{hist_dataset_id}.{station_number}"
+        table_metadata = client.get_table(table_ref)
+        schema = table_metadata.schema
 
-        column_based_data = {key: [row[key] for row in bq_table] for key in bq_table[0]}
+        # Add new fields for the previous year if not already in the schema
+        new_fields = [
+            bigquery.SchemaField(f'Year_{prev_year}', 'DATE'),
+            bigquery.SchemaField(f'Year_{prev_year}_ET', 'FLOAT')
+        ]
 
-        averages = cimis.get_average_et(column_based_data)
+        schema_updated = False
+        for field in new_fields:
+            if field.name not in [f.name for f in schema]:
+                schema.append(field)
+                schema_updated = True
 
-        for i, row in enumerate(bq_table):
-            row['Average'] = averages[i]
-        # Write the modified data back to a CSV file
+        if schema_updated:
+            print(f"Updating schema for station {station_number}")
+            table_metadata.schema = schema
+            client.update_table(table_metadata, ["schema"])
+
+        # Write updated rows to a CSV file
         filename = f'new_hist_et_{station_number}.csv'
         with open(filename, 'w', newline='') as outfile:
-            writer = csv.DictWriter(outfile, fieldnames=bq_table[0].keys())
+            writer = csv.DictWriter(outfile, fieldnames=updated_rows[0].keys())
             writer.writeheader()
-            writer.writerows(bq_table)
+            writer.writerows(updated_rows)
+
+        # Write updated table back to BigQuery
+        print("Writing updated data back to BigQuery")
+        db.write_to_table_from_csv(
+            hist_dataset_id,
+            station_number,
+            filename,
+            schema,  # Pass the updated schema
+            project=project
+        )
+
+    print("Historical ET update process completed.")
+
+def merge_et_logger_tables():
+    redo_loggers = []
+    growers = open_pickle()
+    for grower in growers:
+        for field in grower.fields:
+            if field.active:
+                for logger in field.loggers:
+                    if logger.active:
+                        try:
+                            logger.merge_et_db_with_logger_db_values()
+                            time.sleep(1)
+                        except Exception as e:
+                            redo_loggers.append(logger)
+                            print(e)
+                            print('Error')
+
+    for logger in redo_loggers:
+        try:
+            logger.merge_et_db_with_logger_db_values()
+            time.sleep(1)
+        except Exception as e:
+            print(e)
+            print('Error')
+
+
+def calculate_stats_for_acres(region):
+    """
+    Calculates in the pickle how many uninstaleld vs installed acres only for tomatoes
+    :param region:
+    :return:
+    """
+    # total_acres = get_total_acres(region=region)
+    installed_acres = 0
+    uninstalled_acres = 0
+    try:
+        growers = open_pickle()
+        for grower in growers:
+            if grower.region == region:
+                for field in grower.fields:
+                    if field.active:
+                        installed_acres += float(field.acres)
+                    all_loggers_uninstalled = all(logger.uninstall_date is not None for logger in field.loggers)
+                    # for logger in field.loggers:
+                    if all_loggers_uninstalled:
+                        uninstalled_acres += float(field.acres)
+        return installed_acres or 0, uninstalled_acres or 0
+
+    except Exception as err:
+        print(f"Error calculating acres for {region}: {err}")
+        return 0, 0
+
+# merge_et_logger_tables()
+# show_pickle()
+
+# growers = open_pickle()
+# for grower in growers:
+#     for field in grower.fields:
+#         for logger in field.loggers:
+#             old_opt_low = logger.soil.optimum_lower
+#             old_opt_high = logger.soil.optimum_upper
+#             new_soil = Soil(field_capacity=logger.soil.field_capacity, wilting_point=logger.soil.wilting_point)
+#             logger.soil = new_soil
+#             new_soil_low = new_soil.optimum_lower
+#             if old_opt_low != new_soil_low:
+#                 print(f'Old optimum: {old_opt_low} - {old_opt_high}')
+#                 print(f'New optimum: {new_soil_low} - {new_soil.optimum_upper}')
+#                 print()
+#
+# write_pickle(growers)
+
+
+def generate_field_name_string_for_uninstall(count_inactive = True):
+    """
+    Function to print a list of all fields to be able to copy and paste it into the uninstall form list
+
+    If count_inactive is set to False, it will only show fields that are still active, which is useful for updating
+    the list on the form as fields are uninstalled. The default is True so it prints all fields, regardless
+
+    """
+    field_names_sorted = []
+    growers = open_pickle()
+    for grower in growers:
+        for field in grower.fields:
+            if count_inactive:
+                field_names_sorted.append(field.name)
+            else:
+                if field.active:
+                    field_names_sorted.append(field.name)
+    field_names_sorted.sort()
+    field_names_sorted_string = ",".join(field_names_sorted)
+    print(field_names_sorted_string)
+
+
+# generate_field_name_string_for_uninstall()
+
+
+def et_logger_table_merges():
+    growers = open_pickle()
+    for grower in growers:
+        for field in grower.fields:
+            for logger in field.loggers:
+                logger.merge_et_db_with_logger_db_values()
+
+
+def compare_two_datasets(dataset1, dataset2):
+    """
+    Function that takes 2 dictionaries and compares them to see how close the values for each key are to each other.
+    Used to compare results from Meter API v1 vs Meter API v4
+    Dataset1 and Dataset2 should be structured in this way:
+    {
+        'Air Temp': [1, 2, 3, 4, ...],
+        'Target Temp': [1, 2, 3, 4, ...]
+        ...
+    }
+    So the values we are comparing are the values of the lists for each key
+
+    :param dataset1:
+    :param dataset2:
+    """
+
+    # Round all list values to 1 decimal place
+    for key, values in dataset1.items():
+        if key != 'dates':
+            dataset1[key] = [round(value, 1) if isinstance(value, (int, float)) else value for value in
+                                       values]
+
+    for key, values in dataset2.items():
+        if key != 'dates':
+            dataset2[key] = [round(value, 1) if isinstance(value, (int, float)) else value for value in
+                                          values]
+
+    differences = []
+
+    # Compare keys
+    tolerance = 0.11
+    all_keys = set(dataset1.keys()).union(dataset2.keys())
+    for key in all_keys:
+        if key != 'dates':
+            if key not in dataset1:
+                differences.append(f"Key '{key}' is missing in the first dictionary.")
+            elif key not in dataset2:
+                differences.append(f"Key '{key}' is missing in the second dictionary.")
+            else:
+                # If values are lists, compare them element-wise within the tolerance
+                if isinstance(dataset1[key], list) and isinstance(dataset2[key], list):
+                    if len(dataset1[key]) != len(dataset2[key]):
+                        differences.append(
+                            f"Lengths of lists for key '{key}' differ: {len(dataset1[key])} != {len(dataset2[key])}")
+                    else:
+                        # Compare element-wise with the specified tolerance
+                        for i, (val1, val2) in enumerate(zip(dataset1[key], dataset2[key])):
+                            # Check if both are numeric and within tolerance
+                            if isinstance(val1, (int, float)) and isinstance(val2, (int, float)):
+                                if abs(val1 - val2) > tolerance:
+                                    differences.append(
+                                        f"Values at index {i} for key '{key}' differ more than {tolerance}: {val1} != {val2}")
+                            # Check if one is None and the other is not
+                            elif val1 is None and val2 is not None or val2 is None and val1 is not None:
+                                differences.append(
+                                    f"Values at index {i} for key '{key}' differ: {val1} != {val2}")
+                            # Check for exact match if both are None or non-numeric
+                            elif val1 != val2:
+                                differences.append(
+                                    f"Values at index {i} for key '{key}' differ: {val1} != {val2}")
+                # For non-list values, directly compare them
+                elif dataset1[key] != dataset2[key]:
+                    differences.append(
+                        f"Values for key '{key}' differ: {dataset1[key]} != {dataset2[key]}")
+
+        # Output differences
+    if differences:
+        print(f" !!!!! Dictionaries are different:")
+        for diff in differences:
+            print(diff)
+    else:
+        print(f" - Dictionaries are the same within the specified tolerance.")
+
+
+def uninstall_remaining_tomato_fields():
+    """
+    Function to go through the pickle and uninstall any remaining tomato fields
+
+    """
+    growers = open_pickle()
+    dbw = DBWriter()
+    fields_uninstalled_list = []
+    for grower in growers:
+        for field in grower.fields:
+            crop_type = field.loggers[-1].crop_type
+            if field.active and crop_type.lower() in ['tomato', 'tomatoes']:
+                print("\tUninstalling ", field.name)
+                project = dbw.get_db_project(crop_type)
+                grower_name_db = dbw.remove_unwanted_chars_for_db_dataset(field.grower.name)
+                field_name_db = dbw.remove_unwanted_chars_for_db_dataset(field.name)
+
+                # Get uninstallation Date using last date of database
+                print(f"\t\tGrabbing last data date for uninstall date")
+                table_id = f"`{project}.{field_name_db}.{field.loggers[-1].name}`"
+                select_uninstall_date_query = f"select t.date from {table_id} as t order by t.date DESC limit 1"
+                result_uninstall_date_query = dbw.run_dml(select_uninstall_date_query)
+                field_uninstallation_date = None
+                for row in result_uninstall_date_query:
+                    field_uninstallation_date = row.date
+                print(f"\t\t\t{field.name}:{field.loggers[-1].name} Last Data Date:{field_uninstallation_date}")
+                if not field_uninstallation_date:
+                    print(f"\t\t\tNo data for field to get uninstall date for")
+                    continue
+
+                print(f"\t\tSetting field to uninstalled in portal")
+                project = f'growers-{DIRECTORY_YEAR}'
+                uninstall_dml_field_averages = (
+                    f'UPDATE `{project}.{grower_name_db}.field_averages` as t '
+                    f'SET t.order = -999, t.soil_moisture_num = null, '
+                    f't.soil_moisture_desc = "Uninstalled", t.si_num = null, '
+                    f't.si_desc = "Uninstalled" WHERE t.field = "{field.nickname}"'
+                )
+                dbw.run_dml(uninstall_dml_field_averages)
+                print(f'\t\t\tField Averages Table Done')
+
+                uninstall_dml_loggers = (
+                    f'UPDATE `{project}.{grower_name_db}.loggers` as t '
+                    f'SET t.order = -999, t.soil_moisture_num = null, '
+                    f't.soil_moisture_desc = "Uninstalled", t.si_num = null, '
+                    f't.si_desc = "Uninstalled" WHERE t.field = "{field.nickname}"'
+                )
+                dbw.run_dml(uninstall_dml_loggers)
+                print(f'\t\t\tLoggers Table Done')
+
+                for logger in field.loggers:
+                    logger.uninstall_date = field_uninstallation_date
+
+                field.deactivate()
+                fields_uninstalled_list.append(field.name)
+                print("\t<- Uninstall Done ", field.name)
+    print('Fields uninstalled:')
+    print(fields_uninstalled_list)
+    write_pickle(growers)
+
+def export_fields_to_csv(growers, output_file="fields_with_coordinates.csv"):
+    """
+    Exports a CSV containing grower names, field names, crop type, acres, region, latitudes, and longitudes.
+    For each field, the latitude and longitude are taken from the first logger in the field.
+
+    :param growers: List of Grower objects, each containing fields and loggers.
+    :param output_file: Name of the CSV file to save the data.
+    """
+    with open(output_file, mode="w", newline="") as csvfile:
+        writer = csv.writer(csvfile)
+        # Write the header
+        writer.writerow(["Grower Name", "Field Name", "Crop Type", "Acres", "Region", "Latitude", "Longitude"])
+
+        for grower in growers:
+            for field in grower.fields:
+                if field.loggers:
+                    # Use the first logger in the field to get lat and long
+                    first_logger = field.loggers[0]
+                    latitude = first_logger.lat
+                    longitude = first_logger.long
+
+                    # Write the grower and field data to the CSV
+                    writer.writerow([
+                        grower.name,
+                        field.name,
+                        field.crop_type,
+                        field.acres,
+                        grower.region,
+                        latitude,
+                        longitude
+                    ])
 
         # Update schema to include new columns
         new_schema = table_info.schema + [

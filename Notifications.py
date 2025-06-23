@@ -8,6 +8,7 @@ from EmailProcessor import EmailProcessor
 DIRECTORY_YEAR = "2025"
 NOTIFICATION_DIRECTORY = "H:\\Shared drives\\Stomato\\" + DIRECTORY_YEAR
 
+
 class AllNotifications(object):
     """
     Class to hold and manage all notifications
@@ -161,11 +162,11 @@ class AllNotifications(object):
                     filepath = logger_setups_file_path
                 notification.notify_to_html_file(filepath)
 
-
-    def write_all_notifications_to_html_v2(self, technician_name, grower_name):
+    def write_all_notifications_to_html_v2(self, technician_name, grower_name, notif_flags):
         notif_folder = Path(f"{NOTIFICATION_DIRECTORY}\\Notifications")
 
         now = datetime.datetime.today()
+
         if self.notifications:
             sensor_error_notifications = False
             tech_warning_notifications = False
@@ -173,10 +174,12 @@ class AllNotifications(object):
             for notification in self.notifications:
                 if notification.type == 'Sensor Error':
                     sensor_error_notifications = True
+                    notif_flags['sensor_error_notifications'] = True
                 # elif notification.type == 'Technician Warning':
                 #     tech_warning_notifications = True
                 elif notification.type == 'Logger Setups':
                     logger_setup_notifications = True
+                    notif_flags['logger_setup_notifications'] = True
 
             if sensor_error_notifications:
                 # Sensor Errors
@@ -254,33 +257,58 @@ class AllNotifications(object):
                     the_file.write("<p></p>\n")
                     the_file.write("<hr>\n")
 
+        return notif_flags
 
-    def email_all_notifications(self, technician_name, technician_email, file_type='txt'):
+    def email_all_notifications(self, technician_name, technician_email, notif_flags, file_type='txt'):
         now = datetime.datetime.today()
 
         # Sensor Errors
-        notif_folder = Path(f"{NOTIFICATION_DIRECTORY}\\Notifications")
-        sensor_error_notif_folder = Path.joinpath(notif_folder, 'Sensor Error')
-        sensor_error_file_name = technician_name + "_sensor_error_notifications_" + str(
-            now.strftime("%m-%d-%y")
-        ) + "." + file_type
-        sensor_error_file_path = sensor_error_notif_folder / sensor_error_file_name
-        with open(sensor_error_file_path, 'r') as fp:
-            number_of_lines = len(fp.readlines())
-            print('Total lines (Sensor Errs):', number_of_lines)
-        filename = 'Sensor Errors.' + file_type
-        message = f"Attached is a {file_type} file with possible logger issues"
-        email = EmailProcessor()
+        if notif_flags['sensor_error_notifications']:
+            notif_folder = Path(f"{NOTIFICATION_DIRECTORY}\\Notifications")
+            sensor_error_notif_folder = Path.joinpath(notif_folder, 'Sensor Error')
+            sensor_error_file_name = technician_name + "_sensor_error_notifications_" + str(
+                now.strftime("%m-%d-%y")
+            ) + "." + file_type
+            sensor_error_file_path = sensor_error_notif_folder / sensor_error_file_name
+            with open(sensor_error_file_path, 'r') as fp:
+                number_of_lines = len(fp.readlines())
+                print('Total lines (Sensor Errs):', number_of_lines)
+            filename = 'Sensor Errors.' + file_type
+            message = f"Attached is a {file_type} file with possible logger issues"
+            email = EmailProcessor()
 
-        if os.path.exists(sensor_error_file_path):
-            # if number_of_lines > 4:
-            email.send_email_v3(
-                technician_email, technician_name + " > Sensor Errs -  " + str(
-                    datetime.datetime.now().strftime("%m/%d/%y %I:%M")
-                ), message, sensor_error_file_path, filename
-            )
-            # else:
-            #     print('File < 4 lines long, not emailing')
+            if os.path.exists(sensor_error_file_path):
+                # if number_of_lines > 4:
+                email.send_email_v3(
+                    technician_email, technician_name + " > Sensor Errs -  " + str(
+                        datetime.datetime.now().strftime("%m/%d/%y %I:%M")
+                    ), message, sensor_error_file_path, filename
+                )
+                # else:
+                #     print('File < 4 lines long, not emailing')
+
+        # Logger Setups
+        if notif_flags['logger_setup_notifications']:
+            notif_folder = Path(f"{NOTIFICATION_DIRECTORY}\\Notifications")
+            logger_setups_notif_folder = Path.joinpath(notif_folder, 'Logger Setups')
+            logger_setups_file_name = technician_name + "_logger_setups_notifications_" + str(
+                now.strftime("%m-%d-%y")
+            ) + "." + file_type
+            logger_setups_file_path = logger_setups_notif_folder / logger_setups_file_name
+            with open(logger_setups_file_path, 'r') as fp:
+                number_of_lines = len(fp.readlines())
+                print('Total lines (Logger Setups Errs):', number_of_lines)
+            filename = 'Logger Setups Errors.' + file_type
+            message = f"Attached is a {file_type} file with possible logger setups issues"
+            email = EmailProcessor()
+
+            if os.path.exists(logger_setups_file_path):
+                # if number_of_lines > 4:
+                email.send_email_v3(
+                    technician_email, technician_name + " > Logger Setups Errors -  " + str(
+                        datetime.datetime.now().strftime("%m/%d/%y %I:%M")
+                    ), message, logger_setups_file_path, filename
+                )
 
         # Technician Warnings
         # Disabling for the time being
@@ -375,7 +403,8 @@ class Notification_SensorError(Notification):
             "\n Sensor: " + str(self.sensor) + \
             "\n   -> " + str(self.issue) + \
             "\n   -> " + str(message) + \
-            "\n Location: " + str(f"https://www.google.com/maps/search/?api=1&query={self.logger.lat},{self.logger.long}") + \
+            "\n Location: " + str(
+                f"https://www.google.com/maps/search/?api=1&query={self.logger.lat},{self.logger.long}") + \
             "\n-----------------------------------------------------------------------\n"
         )
 
@@ -458,7 +487,8 @@ class Notification_SensorError(Notification):
             the_file.write(f"<td>{str(self.date.strftime('%m/%d/%y'))}</td>\n")
             the_file.write(f"<td>{str(self.sensor)}</td>\n")
             the_file.write(f"<td>{str(self.issue)}</td>\n")
-            the_file.write(f"<td><a href='https://www.google.com/maps/search/?api=1&query={self.logger.lat},{self.logger.long}' target='_blank'>Google Maps</a></td>\n")
+            the_file.write(
+                f"<td><a href='https://www.google.com/maps/search/?api=1&query={self.logger.lat},{self.logger.long}' target='_blank'>Google Maps</a></td>\n")
             the_file.write("</tr>\n")
 
 
@@ -494,7 +524,8 @@ class Notification_TechnicianWarning(Notification):
             "\n Sensor: " + str(self.sensor) + \
             "\n   -> " + str(self.issue) + \
             "\n   -> " + str(message) + \
-            "\n Location: " + str(f"https://www.google.com/maps/search/?api=1&query={self.logger.lat},{self.logger.long}") + \
+            "\n Location: " + str(
+                f"https://www.google.com/maps/search/?api=1&query={self.logger.lat},{self.logger.long}") + \
             "\n-----------------------------------------------------------------------\n"
         )
 
@@ -596,6 +627,7 @@ class Notification_TechnicianWarning(Notification):
                     f"<a href='https://www.google.com/maps/search/?api=1&query={self.logger.lat},{self.logger.long}' target='_blank'>Station Location</a>\n")
                 the_file.write("<p>-----------------------------------------------------------------------</p>\n")
 
+
 class Notification_LoggerSetups(Notification):
     """
     Class for Logger Setups Notifications. This will hold all issues that have to do with incorrect logger setups
@@ -608,7 +640,6 @@ class Notification_LoggerSetups(Notification):
         self.grower = grower
         self.issue = issue
         self.page_link = page_link
-
 
     @property
     def type(self):

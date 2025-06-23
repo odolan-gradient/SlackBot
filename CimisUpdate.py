@@ -11,6 +11,8 @@ print("                                 - " + now.strftime("%m/%d/%y  %I:%M %p")
 Decagon.reset_updated_all()
 Decagon.update_et_information(get_et=True, write_to_db=True)
 
+Decagon.merge_et_logger_tables()
+
 end_time = time.time()
 elapsed_time_seconds = end_time - start_time
 hours = int(elapsed_time_seconds // 3600)

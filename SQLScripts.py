@@ -1,3 +1,4 @@
+import calendar
 import itertools
 import pickle
 import pprint
@@ -19,7 +20,7 @@ from CwsiProcessor import CwsiProcessor
 from DBWriter import DBWriter
 
 dbwriter = DBWriter()
-DIRECTORY_YEAR = "2023"
+DIRECTORY_YEAR = "2025"
 PICKLE_DIRECTORY = "H:\\Shared drives\\Stomato\\" + DIRECTORY_YEAR + "\\Pickle\\"
 
 
@@ -544,7 +545,7 @@ def add_column_to_db_logger_table(column_name_and_type_dict: dict, project='stom
                         print("Field:" + fieldName + " already has ET Hours")
 
 
-def add_column_to_db_grower_portal_logger_table(column_name_and_type_dict: dict, project='growers-2024'):
+def add_column_to_db_grower_portal_logger_table(column_name_and_type_dict: dict, project=f'growers-{DIRECTORY_YEAR}'):
     """
 
     :param column_name_and_type_dict: Dict[column_name] = column_type
@@ -875,6 +876,10 @@ def get_a_logger_for_field(fieldName):
                     return l
 
 
+def is_leap_year_date(date_obj):
+    return date_obj.month == 2 and date_obj.day == 29 and calendar.isleap(date_obj.year)
+
+
 def setup_irrigation_scheduling_db(etStation: str, fieldName: str):
     """
     Sets up the Irrigation Scheduling Table for a Field in the DB
@@ -905,7 +910,9 @@ def setup_irrigation_scheduling_db(etStation: str, fieldName: str):
 
     for index, date in enumerate(dates_list):
         date_only = date.date()  # Convert from (2024, 1, 1, 0, 0) to (2024, 1 ,1)
-        eto = historical_et[date_only]
+        if not is_leap_year_date(date_only):
+            eto = historical_et[date_only]
+            # if it is a leap year date 2/29 then itll use prev days eto
         kc = kc_values['kc'][index]
         if eto is None:
             etc = None
@@ -926,7 +933,6 @@ def setup_irrigation_scheduling_db(etStation: str, fieldName: str):
 
 def returnHistoricalETDict(etStation: str, start_date: date, end_date: date) -> dict:
     """
-    #TODO: adjust returnHistoricalETDict for new naming schema of Hist ET tables
     Returns a dictionary with the historical average ET date and value
     :param etStation: ET station
     :param start_date: Start Date
@@ -1109,7 +1115,7 @@ def fix_weather_db(field):
     # print(date)
 
     dml_statement = (
-                "Update `" + project + "." + dataset + " as t" + " Set t.order = 99 where t.date < " + "'" + date + "'")
+            "Update `" + project + "." + dataset + " as t" + " Set t.order = 99 where t.date < " + "'" + date + "'")
     dbwriter.run_dml(dml_statement, project=project)
     print(f"Finished fixing weather for {field.name}")
     # print(dml_statement)
@@ -1542,7 +1548,7 @@ def find_lowest_psi_fields():
         """
     psi_list = []
     logger_name_list = []
-    project = 'stomato-2023'
+    project = f'stomato-{DIRECTORY_YEAR}'
     # Get list of datasets in database
     client = dbwriter.grab_bq_client(project)
     datasets = dbwriter.get_datasets(project)
@@ -1668,7 +1674,7 @@ def update_grower_portal_report_and_images(grower_names: str):
     :param grower_names: Grower names
     """
     print(f"Updating reports and previews for {grower_names}")
-    project = 'growers-2024'
+    project = f'growers-{DIRECTORY_YEAR}'
     growers = Decagon.open_pickle()
     for g in growers:
         if g.name in grower_names:
@@ -1679,6 +1685,7 @@ def update_grower_portal_report_and_images(grower_names: str):
                 dml_statement_logger = f"UPDATE `{base_table_id}.loggers` SET report = '{f.report_url}', crop_image = '{CwsiProcessor().get_crop_image(f.crop_type)}' WHERE field = '{f.nickname}'"
                 for statement in (dml_statement_field, dml_statement_logger):
                     dbwriter.run_dml(statement, project=project)
+                    print(statement)
     print('Done updating reports and previews')
 
 
@@ -1689,7 +1696,7 @@ def update_field_portal_report_and_images(field_name: str, report_url: str = Non
     """
 
     print(f"Updating reports and previews for {field_name}")
-    project = 'growers-2024'
+    project = f'growers-{DIRECTORY_YEAR}'
     growers = Decagon.open_pickle()
     for g in growers:
         for f in g.fields:
@@ -1752,13 +1759,22 @@ def sum_db_total_for_column_for_list_of_fields(pickle_name: str, pickle_director
 
 
 def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str, new_soil_type: str):
-    """Single function to change the soil type for a logger in both the pickle and the db
+    """
+    Single function to change the soil type for a logger in both the pickle and the db
 
     :param logger_name:
     :param field_name:
     :param grower_name:
     :param new_soil_type:
     """
+    print(f'Changing soil type for logger: {logger_name} to {new_soil_type}')
+
+    growers = Decagon.open_pickle()
+    dbw = DBWriter()
+
+    logger_found = False
+
+    # Change soil type in the pickle
     print('-Changing soil type in the pickle')
     for grower in growers:
         if grower.name == grower_name:
@@ -1772,11 +1788,12 @@ def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str,
                             field_capacity = logger.soil.field_capacity
                             wilting_point = logger.soil.wilting_point
                             crop_type = logger.crop_type
-    SharedPickle.write_pickle(growers)
+                            logger_found = True
+    Decagon.write_pickle(growers)
     print('\tDone with pickle')
 
-    # Change soil type parameters in the DB
-    if crop_type:
+    if logger_found:
+        # Change soil type parameters in the DB
         print('-Changing soil type in the db')
         field_name_db = dbw.remove_unwanted_chars_for_db_dataset(field_name)
         db_project = dbw.get_db_project(crop_type)
@@ -1789,140 +1806,187 @@ def change_logger_soil_type(logger_name: str, field_name: str, grower_name: str,
         print(f'Soil type for {logger_name} changed from {old_soil_type} to {new_soil_type}')
         print()
     else:
-        print('Error: problem finding logger')
+        print(f'Logger {logger_name} not found')
 
-def write_logger_value_to_db(grower, field, logger, date, attribute, new_value):
-    """Update a specific attribute value for a logger on a given date."""
-    from db_writer import DBWriter
-    dbwriter = DBWriter()
-    
-    # Clean field name for database
-    field_name_db = dbwriter.remove_unwanted_chars_for_db_dataset(field)
-    
-    # Get the database project for this crop type
-    db_project = dbwriter.get_db_project(SharedPickle.get_field(field).crop_type)
-    
-    # Build and execute the update query
-    query = f"""
-        UPDATE `{db_project}.{field_name_db}.{logger}`
-        SET {attribute} = {new_value}
-        WHERE date = '{date}'
+
+def get_db_table(field, logger, year):
+    result_dict = {}
+    field_name_db = dbwriter.remove_unwanted_chars_for_db_dataset(field.name)
+    db_project = dbwriter.get_db_project(field.crop_type)
+    # prev_year = int(year) - 1
+    # next_year = int(year) + 1
+    # Query all columns for the logger
+    # dml = f"SELECT * FROM `{db_project}.{field_name_db}.{logger.name}` Where date > '{prev_year}-12-31' and date < '{next_year}-12-31'"
+    dml = f"SELECT * FROM `{db_project}.{field_name_db}.{logger.name}`"
+    result = dbwriter.run_dml(dml)
+
+    # Initialize the logger's data dictionary if not already present
+    if logger.name not in result_dict:
+        result_dict[logger.name] = {}
+
+    # Process each row in the result
+    for row in result:
+        for column_name, value in row.items():
+            if column_name not in result_dict[logger.name]:
+                result_dict[logger.name][column_name] = []
+            result_dict[logger.name][column_name].append(value)
+    return result_dict
+
+
+def get_logger_db(field, logger, year):
     """
-    dbwriter.run_dml(query)
-    return True
 
-
-def get_values_for_date(project, field_name, logger_name, date):
+    :param field:
+    :param logger:
+    :param year:
+    :return:
     """
-    Get vwc_1, vwc_2, vwc_3 values for a specific date from the DB.
+    dbw = DBWriter()
+    result_dict = {}
+    field_name_db = dbw.remove_unwanted_chars_for_db_dataset(field.name)
+    db_project = dbw.get_db_project(field.crop_type)
+
+    # Query all columns for the logger
+    dml = f"SELECT * FROM `{db_project}.{field_name_db}.{logger.name}` Where date > '{year}-12-31'"
+    result = dbw.run_dml(dml)
+
+    # Process each row in the result
+    for row in result:
+        for column_name, value in row.items():
+            if column_name not in result_dict:
+                result_dict[column_name] = []
+            result_dict[column_name].append(value)
+    return result_dict
+
+
+def get_entire_table_points(list_of_field_names: list[str], year='2025', pickle = '2025_pickle.pickle') -> dict:
+    """
+    Function that takes in a list of grower field names and retrieves all columns from each logger inside that grower field.
+    The data is returned in a dictionary where each logger's name is the key, and the value is another dictionary.
+    This inner dictionary contains column names as keys and lists of column values as values.
+
+    :param year:
+    :param list_of_field_names: List of strings of the field names to process
+    :return: Dictionary containing all columns for each logger, with each column as its own key
+    """
+    growers = Decagon.open_pickle(pickle)
+    dbw = DBWriter()
+    result_dict = {}  # This will now accumulate multiple loggers
+
+    for grower in growers:
+        for field in grower.fields:
+            if field.name in list_of_field_names:
+                print(f'Found {field.name}. Processing...')
+                for logger in field.loggers:
+                    print(f'\t{logger.name}')
+
+                    # Get the logger data
+                    logger_data = get_db_table(field, logger, year)
+
+                    # Merge the results correctly
+                    for logger_name, data in logger_data.items():
+                        if logger_name not in result_dict:
+                            result_dict[logger_name] = data  # If logger is new, add it
+                        else:
+                            # Merge columns, appending data if the logger already exists
+                            for column, values in data.items():
+                                if column not in result_dict[logger_name]:
+                                    result_dict[logger_name][column] = values
+                                else:
+                                    result_dict[logger_name][column].extend(values)  # Append values
+
+    return result_dict
+
+
+def get_logger_table(logger_name: str, year='2025', growers=None) -> dict:
+    """
+    Function that takes in a list of grower field names and retrieves all columns from each logger inside that grower field.
+    The data is returned in a dictionary where each logger's name is the key, and the value is another dictionary.
+    This inner dictionary contains column names as keys and lists of column values as values.
+
+    :param growers:
+    :param year:
+    :param logger_name:
+    :return: Dictionary containing all columns for each logger, with each column as its own key
+    """
+    if growers is None:
+        growers = Decagon.open_pickle()
+    dbw = DBWriter()
+    result_dict = {}
+    for grower in growers:
+        for field in grower.fields:
+            for logger in field.loggers:
+                if logger.name == logger_name:
+                    print(f'Found {logger.name}. Processing...')
+
+                    result_dict = get_logger_db(field, logger, year)
+
+    return result_dict
+
+
+def fetch_values_for_date(project, field_name, logger_name, date):
+    """
+    Fetch vwc_1, vwc_2, vwc_3 values for a specific date from the database.
     """
     field_name = dbwriter.remove_unwanted_chars_for_db_dataset(field_name)
     dataset_id = project + '.' + field_name + '.' + logger_name
     dataset_id = "`" + dataset_id + "`"
 
+    # Format the date for SQL query
     date_s = date.strftime("%Y-%m-%d")
     date_s = "'" + date_s + "'"
 
-    # Query to get values for the specific date
+    # Query to fetch values for the specific date
     query = f"""
-    SELECT vwc_1, vwc_2, vwc_3, field_capacity, wilting_point
+    SELECT vwc_1, vwc_2, vwc_3
     FROM {dataset_id}
     WHERE date = {date_s}
     """
 
-    rows = dbwriter.run_dml(query, project=project)
+    # Execute query and fetch results
+    result = dbwriter.run_dml(query, project=project)
+    result_list = list(result)  # Convert RowIterator to list
 
-    # Convert the RowIterator to a list
-    result = list(rows)
-
-    if result:
-        return result[0]
+    if result_list:
+        return result_list[0]  # Return the first result
     else:
         return None
 
 
-def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_date, vwcs):
-    # Ensure field_name is safe for database use
+def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_date):
     field_name = dbwriter.remove_unwanted_chars_for_db_dataset(field_name)
 
+    # Setup dataset_id from passed in field and logger_id parameters
     dataset_id = project + '.' + field_name + '.' + logger_name
     dataset_id = "`" + dataset_id + "`"
 
-    # Parse dates
+    # Turn date string into datetimes
     start_date_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_date_dt = datetime.strptime(end_date, "%Y-%m-%d")
-    today = datetime.today()
-
-    # Ensure the end_date is not today or in the future
-    if end_date_dt >= today:
-        raise ValueError("end_date cannot be today or in the future. Please provide a valid date range.")
-
-    # Fetch the previous day's data for the start_date
     start_date_prev_day = start_date_dt - timedelta(days=1)
 
     # Fetch values from the day before start_date
-    previous_day_values = get_values_for_date(project, field_name, logger_name, start_date_prev_day)
+    previous_day_values = fetch_values_for_date(project, field_name, logger_name, start_date_prev_day)
 
     if previous_day_values:
-        vwc_1_value, vwc_2_value, vwc_3_value, fc, wp = previous_day_values
+        vwc_1_value, vwc_2_value, vwc_3_value = previous_day_values
         current_date = start_date_dt
 
-        # Loop through each date in the range and update/insert VWC data
         while current_date <= end_date_dt:
             current_date_s = current_date.strftime("%Y-%m-%d")
             current_date_s = "'" + current_date_s + "'"
 
-            # Check if data exists for the current date
-            check_query = f"""
-            SELECT COUNT(*) as count
-            FROM {dataset_id}
-            WHERE date = {current_date_s}
-            """
+            print(f'Updating DB for date: {current_date_s}')
+            dml = (
+                f"UPDATE {dataset_id} "
+                f"SET vwc_1 = {vwc_1_value}, "
+                f"    vwc_2 = {vwc_2_value}, "
+                f"    vwc_3 = {vwc_3_value} "
+                f"WHERE date = {current_date_s}"
+            )
+            dbwriter.run_dml(dml, project=project)
 
-            check_rows = dbwriter.run_dml(check_query, project=project)
-            check_result = list(check_rows)
-
-            # Build the VWC-related parts of the DML based on the 'vwcs' parameter
-            vwc_set_clauses = []
-            vwc_insert_columns = []
-            vwc_insert_values = []
-
-            if 'VWC 1' in vwcs:
-                vwc_set_clauses.append(f"vwc_1 = {vwc_1_value}")
-                vwc_insert_columns.append("vwc_1")
-                vwc_insert_values.append(vwc_1_value)
-
-            if 'VWC 2' in vwcs:
-                vwc_set_clauses.append(f"vwc_2 = {vwc_2_value}")
-                vwc_insert_columns.append("vwc_2")
-                vwc_insert_values.append(vwc_2_value)
-
-            if 'VWC 3' in vwcs:
-                vwc_set_clauses.append(f"vwc_3 = {vwc_3_value}")
-                vwc_insert_columns.append("vwc_3")
-                vwc_insert_values.append(vwc_3_value)
-
-            if check_result and check_result[0][0] == 0:
-                # No data exists for this date, insert a new row
-                insert_dml = (
-                    f"INSERT INTO {dataset_id} "
-                    f"(date, {', '.join(vwc_insert_columns)}, field_capacity, wilting_point) "
-                    f"VALUES ({current_date_s}, {', '.join(map(str, vwc_insert_values))}, {fc}, {wp})"
-                )
-                dbwriter.run_dml(insert_dml, project=project)
-                print(f'Inserted new row for date: {current_date_s}')
-            else:
-                # Update existing row
-                update_dml = (
-                    f"UPDATE {dataset_id} "
-                    f"SET {', '.join(vwc_set_clauses)}, "
-                    f"    field_capacity = {fc}, "
-                    f"    wilting_point = {wp} "
-                    f"WHERE date = {current_date_s}"
-                )
-                dbwriter.run_dml(update_dml, project=project)
-                print(f'Updated row for date: {current_date_s}')
-
+            # Move to the next date
             current_date += timedelta(days=1)
 
         print('Date range update completed.')
@@ -1930,13 +1994,113 @@ def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_
         print('No values found for the day before the start_date')
 
 
-# Decagon.show_pickle()
-# growers = Decagon.open_pickle()
-# for grower in growers:
-#     for field in grower.fields:
-#         if field.name == 'Lucero DillardD7':
-#             for logger in field.loggers:
-#                 change_logger_soil_type(logger.name, logger.field.name, logger.grower.name, 'Sandy Loam')
+def rerun_logger_from_scratch_to_fix_different_minute_interval_issues(grower_name, field_name, logger_name):
+    """
+    This function requires that inside Loggers update function, the specific code to run the larger 96 bucket irrigation
+    ledger is uncommented, update_irrigation_ledger_2 or _3, and the standard update_irrigation_ledger is commented out
+
+    :param grower_name:
+    :param field_name:
+    :param logger_name:
+    :return:
+    """
+    dbw = DBWriter()
+    growers = Decagon.open_pickle()
+    for grower in growers:
+        if grower.name == grower_name:
+            for field in grower.fields:
+                if field.name == field_name:
+                    for logger in field.loggers:
+                        if logger.name == logger_name:
+                            print(f'Fixing logger {logger.name} for non standard minute interval issues')
+
+                            #Delete table values
+                            crop_type = logger.crop_type
+                            field_name_db = dbw.remove_unwanted_chars_for_db_dataset(field_name)
+                            db_project = dbw.get_db_project(crop_type)
+                            print(f'Deleting table contents for {db_project}.{field_name_db}.{logger_name}')
+                            dml = (f'DELETE FROM `{db_project}.{field_name_db}.{logger_name}` '
+                                   f'WHERE TRUE')
+                            print(f'dml: {dml}')
+                            result = dbw.run_dml(dml)
+                            print(f'\tDone with table clear')
+
+                            #Update logger from 0
+                            print(f'Updating logger {logger.name} from 0')
+                            logger.ir_active = False
+                            Decagon.write_pickle(growers)
+                            Decagon.only_certain_growers_field_logger_update(
+                                grower.name,
+                                field.name,
+                                logger.name,
+                                logger.id,
+                                write_to_db=True,
+                                specific_mrid=0
+                            )
+                            print('\tDone with logger update')
+
+
+def set_to_null_column(grower_name, field_name, logger_name, column_names, start_date, end_date=None):
+    """
+    Function to set a certain column or columns of a loggers DB table to null for a certain date range,
+    if end_date not passed it will do all dates after the start_date.
+    This will be useful for deleting psi values that started early.
+
+    :param grower_name: Name of the grower
+    :param field_name: Name of the field
+    :param logger_name: Name of the logger
+    :param column_names: List of column names to set to NULL
+    :param start_date: Start date (inclusive) in YYYY-MM-DD format
+    :param end_date: End date (inclusive) in YYYY-MM-DD format
+    """
+    dbw = DBWriter()
+    growers = Decagon.open_pickle()
+
+    for grower in growers:
+        if grower.name == grower_name:
+            for field in grower.fields:
+                if field.name == field_name:
+                    for logger in field.loggers:
+                        if logger.name == logger_name:
+                            if end_date:
+                                print(
+                                    f'Updating logger {logger.name} {column_names} to NULL from date {start_date} to {end_date}'
+                                )
+                            else:
+                                print(
+                                    f'Updating logger {logger.name} {column_names} to NULL from date {start_date} onward'
+                                )
+
+                            crop_type = logger.crop_type
+                            field_name_db = dbw.remove_unwanted_chars_for_db_dataset(field_name)
+                            db_project = dbw.get_db_project(crop_type)
+
+                            # Generating the SQL query
+                            column_updates = ", ".join(f"{col} = NULL" for col in column_names)
+                            if end_date:
+                                date_condition = f"BETWEEN '{start_date}' AND '{end_date}'"
+                            else:
+                                date_condition = f">= '{start_date}'"
+
+                            dml = (
+                                f'UPDATE `{db_project}.{field_name_db}.{logger_name}` '
+                                f'SET {column_updates} '
+                                f'WHERE date {date_condition}'
+                            )
+
+                            # Execute the query
+                            dbw.run_dml(dml)
+                            print(f'Ran: {dml}')
+                            return
+
+    print("Logger not found. No updates were made.")
+
+# def update_grower_portal_data
+
+# rerun_logger_from_scratch_to_fix_different_minute_interval_issues('Lucero Rio Vista', 'Lucero Rio VistaC', 'RV-C-NE')
+# rerun_logger_from_scratch_to_fix_different_minute_interval_issues('Lucero Rio Vista', 'Lucero Rio VistaC', 'RV-C-W')
+
+# rerun_logger_from_scratch_to_fix_different_minute_interval_issues('Lucero Rio Vista', 'Lucero Rio VistaD', 'LR-D-W')
 
 
 # list_of_grower_fields_to_process = ['Bone Farms LLCF7', 'Fransicioni & Griva8', 'Mike Silva01-MS3', 'Nuss Farms Inc7',

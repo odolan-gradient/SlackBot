@@ -1,3 +1,4 @@
+import re
 import time
 from collections import OrderedDict
 from datetime import datetime, timedelta
@@ -16,9 +17,12 @@ from Field import Field
 from Grower import Grower
 from Logger import Logger
 from Notifications import Notification_LoggerSetups
+from Zentra import Zentra
 
+YEAR = '2025'
 LOGGER_SETUPS_SHEET_ID = '1rsPrX44pCHOhbOHZfWubDkuuexP8pSG8kspW03FAqOU'
-NEW_LOGGER_SETUPS_SHEET_ID = '1ycEimLNLXpg7rZ5QxAwTfnAO1BkNBIwOzfpM1dqAxdg'
+NEW_LOGGER_SETUPS_SHEET_ID_2024 = '1ycEimLNLXpg7rZ5QxAwTfnAO1BkNBIwOzfpM1dqAxdg'
+NEW_LOGGER_SETUPS_SHEET_ID = '1RUo7w9mOfzGCncDNIgUC_xvI3DrodITEyamcjottIL8'
 
 
 def setup_grower(grower: str, technician_name: str, email: str = '', region: str = ''):
@@ -52,7 +56,8 @@ def setup_growers_fields_loggers_lists() -> tuple[list, list, list]:
                     logger_list.append(logger.id)
     return grower_list, field_list, logger_list
 
-def check_if_grower_in_list(grower_name:str, grower_list:list, technician:str, region:str) -> list:
+
+def check_if_grower_in_list(grower_name: str, grower_list: list, technician: str, region: str) -> list:
     """
     Checks to see if grower exists in the grower list, and if not it creates a new grower in the pickle
     :param grower_name: Grower Name
@@ -68,7 +73,7 @@ def check_if_grower_in_list(grower_name:str, grower_list:list, technician:str, r
     return grower_list
 
 
-def add_logger_id_to_pickle(logger_id:str):
+def add_logger_id_to_pickle(logger_id: str):
     """
     Function adds a logger id to the logger id pickle
     :param logger_id: Logger ID
@@ -78,7 +83,7 @@ def add_logger_id_to_pickle(logger_id:str):
     Decagon.write_pickle(loggers, filename="loggerList.pickle")
 
 
-def remove_field(grower_target:str, field_target:str):
+def remove_field(grower_target: str, field_target: str):
     """
     Function removes a field from a grower
     :param grower_target: Grower Name
@@ -98,7 +103,7 @@ def remove_field(grower_target:str, field_target:str):
     # Decagon.write_pickle(growers)
 
 
-def deactivate_field(grower:str, field: str, uninstall_date):
+def deactivate_field(grower: str, field: str, uninstall_date):
     """
     Function deactivates a field from a grower
     :param grower: Grower Name
@@ -116,7 +121,6 @@ def deactivate_field(grower:str, field: str, uninstall_date):
                         l.uninstall_date = uninstall_date
     Decagon.write_pickle(growers)
     Decagon.deactivate_field(grower, field)
-
 
 
 def remove_logger_id_from_pickle(logger_id: str):
@@ -180,6 +184,7 @@ def set_up_password_dict(service, sheet_id: str) -> dict:
     # print(loggerDict)
     return logger_passwords_dict
 
+
 def find_password(logger_id: str, logger_dict: dict) -> str:
     """
     Find password for a logger in the given logger dictionary
@@ -188,6 +193,7 @@ def find_password(logger_id: str, logger_dict: dict) -> str:
     :return: Logger Password
     """
     return logger_dict.get(logger_id)
+
 
 def check_if_logger_has_been_added_to_field_prev(logger_id: str, field_name: str, grower_name: str) -> bool:
     """
@@ -208,9 +214,9 @@ def check_if_logger_has_been_added_to_field_prev(logger_id: str, field_name: str
     return False
 
 
-
-def add_logger_to_field(row, result, logger_num: str, logger_dict: dict, logger_list: list, grower_name: str, field_list: list, field_name_pickle: str, tab_id, field_name:str,
-                        additional_stations:bool):
+def add_logger_to_field(row, result, logger_num: str, logger_dict: dict, logger_list: list, grower_name: str,
+                        field_list: list, field_name_pickle: str, tab_id, field_name: str,
+                        additional_stations: bool):
     """
 
     :param row:
@@ -311,7 +317,7 @@ def add_logger_to_field(row, result, logger_num: str, logger_dict: dict, logger_
                 inactive_cimis_station_list = cimis_station.return_inactive_cimis_stations_list()
                 cimis_stations_data = cimis.get_list_of_active_eto_stations()
                 closest_cimis_station = cimis.get_closest_station(cimis_stations_data, float(lat), float(long),
-                                                                        inactive_cimis_station_list)
+                                                                  inactive_cimis_station_list)
 
                 if closest_cimis_station is None:
                     print(
@@ -344,7 +350,8 @@ def add_logger_to_field(row, result, logger_num: str, logger_dict: dict, logger_
 
         # If logger password has been found, set up new logger
         if logger_password:
-            logger = Decagon.setup_logger(logger_id, logger_password, logger_name, crop_type, soil_type, gpm, acres, logger_direction, lat, long,
+            logger = Decagon.setup_logger(logger_id, logger_password, logger_name, crop_type, soil_type, gpm, acres,
+                                          logger_direction, lat, long,
                                           install_date_converted, planting_date=planting_date, rnd=rnd)
             growers = Decagon.open_pickle()
             print("\tLogger is not in List")
@@ -364,7 +371,8 @@ def add_logger_to_field(row, result, logger_num: str, logger_dict: dict, logger_
             print("\t\tPassword does not match logger ID")
 
 
-def loop_through_loggers(field_name_pickle: str, grower_name: str, field_name: str, field_list: list, logger_list: list, row, result, logger_dict: dict, num_of_loggers: int, tab_id="",
+def loop_through_loggers(field_name_pickle: str, grower_name: str, field_name: str, field_list: list, logger_list: list,
+                         row, result, logger_dict: dict, num_of_loggers: int, tab_id="",
                          add_stations: bool = False):
     """
 
@@ -381,7 +389,8 @@ def loop_through_loggers(field_name_pickle: str, grower_name: str, field_name: s
     :param add_stations: Boolean to know whether we are adding additional stations to a previous field
     """
     for logger_num in range(1, num_of_loggers + 1):
-        add_logger_to_field(row, result, str(logger_num), logger_dict, logger_list, grower_name, field_list, field_name_pickle, tab_id, field_name,
+        add_logger_to_field(row, result, str(logger_num), logger_dict, logger_list, grower_name, field_list,
+                            field_name_pickle, tab_id, field_name,
                             add_stations)
 
 
@@ -403,7 +412,7 @@ def logger_setups_process() -> None:
     grower_name_list, field_name_list, logger_id_list = setup_growers_fields_loggers_lists()
 
     # Setup Google Sheet information
-    sheet_tab_name = 'Setup'
+    sheet_tab_name = 'Form Submissions'
 
     # Setups service to read google sheets
     g_sheet = GSheetCredentialSevice.GSheetCredentialSevice()
@@ -464,7 +473,8 @@ def logger_setups_process() -> None:
 
                 if cimis_stations_data is None:
                     print()
-                    print(f'\t\tFailed the CIMIS call for stations {cimis_api_attempt_limit} times. Ending logger setups')
+                    print(
+                        f'\t\tFailed the CIMIS call for stations {cimis_api_attempt_limit} times. Ending logger setups')
                     successful_setup = False
                     return None
                 else:
@@ -547,6 +557,9 @@ def logger_setups_process() -> None:
                             row,
                             row_result
                         )
+                        # If the field lat and long werent set before (blank on the sheet) use the location we got from Zentra
+                        if new_field.lat == '' or new_field.long == '':
+                            new_field.lat, new_field.long = new_logger.lat, new_logger.long
 
                         if new_logger is None:
                             print(f'\t\t\tERROR')
@@ -581,7 +594,7 @@ def logger_setups_process() -> None:
 
                 if new_grower:
                     growers.append(grower)
-                Decagon.write_pickle(growers)
+                Decagon.write_pickle(growers) # TODO this shouldnt write until a full successful run so after irr scheduling
 
                 # Setup Irrigation Scheduling
                 print(f'--------------- Setting up Irrigation Scheduling: {field_name_pickle} ---------------\n')
@@ -638,10 +651,13 @@ def setup_new_logger(logger_id, logger_name, logger_num, logger_passwords_dict, 
 
     # Grab pertinent variables
     lat_col = gSheetReader.getColumnHeader(f"Lat (L{logger_num})", row_result)
-    lat = float(row[lat_col].strip())
-
     long_col = gSheetReader.getColumnHeader(f"Long (L{logger_num})", row_result)
-    long = float(row[long_col].strip())
+
+    if row[lat_col] == '' or row[long_col] == '':
+        lat, long = get_logger_geolocation(logger_id)  # float
+    else:
+        lat = float(row[lat_col].strip())
+        long = float(row[long_col].strip())
 
     gpm_col = gSheetReader.getColumnHeader(f"Irr. Gallons Per Minute (L{logger_num})", row_result)
     gpm = float(row[gpm_col].strip())
@@ -653,8 +669,23 @@ def setup_new_logger(logger_id, logger_name, logger_num, logger_passwords_dict, 
     soil_type = row[soil_type_col].strip()
 
     if soil_type == '':
-        soil_type = get_soil_type_from_coords(lat, long)
-
+        print(f'\t\t\t\tGrabbing soil type from Coords: {lat}, {long}')
+        soil_type, status = get_soil_type_from_coords(lat, long)
+        if soil_type is None or status is True:
+            print('\t\t\t\tError grabbing soil type')
+            if soil_type is None:
+                print(f'\t\t\t\tNo soil type found at {lat}, {long} ')
+            elif status is True:
+                print(f'\t\t\t\tUsing backup soil description {soil_type}, notifying techs... ')
+            grower.technician.all_notifications.add_notification(
+                Notification_LoggerSetups(
+                    datetime.now(),
+                    grower.name,
+                    new_field.name,
+                    issue=f'Soil type pulled from Soil Survey is uncertain. Using {soil_type} as best guess. Please '
+                          f'check Soil Survey to verify'
+                )
+            )
     planting_date_col = gSheetReader.getColumnHeader("Planting Date", row_result)
     planting_date = row[planting_date_col].strip()
     planting_date_converted = datetime.strptime(planting_date, '%Y-%m-%d').date()
@@ -699,6 +730,10 @@ def setup_new_field(field_name, grower, row, row_result, cimis_stations_data, in
     """
     print(f'\t\tSetting up new field: {field_name}...')
 
+    field_name_ms_col = gSheetReader.getColumnHeader("Field Name (MS)", row_result)
+    field_name_ms = row[field_name_ms_col].strip()
+    field_name_ms_formatted = format_field_name_ms_standard(field_name_ms)
+
     field_type_col = gSheetReader.getColumnHeader("Field Type", row_result)
     field_type = row[field_type_col].strip()
 
@@ -713,10 +748,17 @@ def setup_new_field(field_name, grower, row, row_result, cimis_stations_data, in
 
     # Lat long are from the first logger in the field
     lat_col = gSheetReader.getColumnHeader("Lat (L1)", row_result)
-    lat = float(row[lat_col].strip())
-
     long_col = gSheetReader.getColumnHeader("Long (L1)", row_result)
-    long = float(row[long_col].strip())
+
+    # If no lat long provided look up first logger IDs Zentra geolocation
+    logger_id_col = gSheetReader.getColumnHeader("Logger ID (L1)", row_result)
+    logger_id = row[logger_id_col].strip()
+
+    if row[lat_col] == '' or row[long_col] == '':
+        lat, long = get_logger_geolocation(logger_id)
+    else:
+        lat = float(row[lat_col].strip())
+        long = float(row[long_col].strip())
 
     print(f'\t\tGrabbing closest cimis station...')
     cimis = CIMIS()
@@ -734,7 +776,8 @@ def setup_new_field(field_name, grower, row, row_result, cimis_stations_data, in
         field_acres,
         crop_type,
         grower=grower,
-        field_type=field_type
+        field_type=field_type,
+        name_ms=field_name_ms_formatted
     )
 
     print(f'\t\t<-Field: {field_name} Created')
@@ -836,7 +879,8 @@ def setup_field():
                     additional_stations_boolean = False
 
                 # Loop through each logger that is in the form for that specific field
-                loop_through_loggers(field_name_pickle, grower_name, field_name, field_list, logger_list, row, row_result, logger_dict,
+                loop_through_loggers(field_name_pickle, grower_name, field_name, field_list, logger_list, row,
+                                     row_result, logger_dict,
                                      num_of_loggers, add_stations=additional_stations_boolean)
 
                 # Sets up nickname for field
@@ -937,7 +981,8 @@ def setup_irr_scheduling(field, cimis_stations_data):
             handle_coastal_list(cimis_stations_data, station_number, stations_to_skip)
 
             stations_to_skip.append(station_number)
-            station_number = cimis.get_closest_station_in_county(station_number, stations_to_skip, cached_stations, cimis_stations_data)
+            station_number = cimis.get_closest_station_in_county(station_number, stations_to_skip, cached_stations,
+                                                                 cimis_stations_data)
 
             # Found a good county station that's valid
             if station_number is not None:
@@ -946,7 +991,8 @@ def setup_irr_scheduling(field, cimis_stations_data):
             # Tried all in the county now look for closest
             else:
                 print('\tChecking Closest in Range Stations....')
-                station_number = cimis.get_closest_valid_station(float(field.lat), float(field.long), stations_to_skip, cached_stations, cimis_stations_data)
+                station_number = cimis.get_closest_valid_station(float(field.lat), float(field.long), stations_to_skip,
+                                                                 cached_stations, cimis_stations_data)
                 if station_number is not None:
                     Decagon.write_new_historical_et_to_db_2(dataset, station_number, cached_stations[station_number],
                                                             overwrite=True)
@@ -961,7 +1007,6 @@ def setup_irr_scheduling(field, cimis_stations_data):
                                                                 cached_stations[station_number],
                                                                 overwrite=True)
 
-    print("\tSetting up irrigation scheduling DB table...")
     setup_dataset(field)
     SQLScripts.setup_irrigation_scheduling_db(station_number, field.name)
 
@@ -996,7 +1041,7 @@ def check_for_missing_report_or_preview_in_pickle():
     # sheet_id = '1rsPrX44pCHOhbOHZfWubDkuuexP8pSG8kspW03FAqOU'
 
     # NEW SHEET ID
-    sheet_id = '1ycEimLNLXpg7rZ5QxAwTfnAO1BkNBIwOzfpM1dqAxdg'
+    sheet_id = NEW_LOGGER_SETUPS_SHEET_ID
     range_name = "Setup"
 
     g_sheet = GSheetCredentialSevice.GSheetCredentialSevice()
@@ -1009,7 +1054,7 @@ def check_for_missing_report_or_preview_in_pickle():
     # Setup variables
     field_name_header = gSheetReader.getColumnHeader("Field Name (Grower)", row_result)
     grower_header = gSheetReader.getColumnHeader("Grower Name", row_result)
-    field_setup_done_header = gSheetReader.getColumnHeader("Field Setup Done", row_result)
+    field_setup_done_header = gSheetReader.getColumnHeader("Backend Setup Done", row_result)
     report_header = gSheetReader.getColumnHeader("Report", row_result)
     preview_header = gSheetReader.getColumnHeader("Preview", row_result)
 
@@ -1037,7 +1082,7 @@ def check_for_missing_report_or_preview_in_pickle():
                 preview = row[preview_header]
                 # Update the field in the pickle with the correct report and preview values
                 update_report_and_image_in_pickle(field_name_pickle_cleaned_up, report, preview)
-
+                SQLScripts.update_field_portal_report_and_images(field_name_pickle_cleaned_up, report_url=report, preview_url=preview)
                 # Send notification that field is finished and ready to be shown to the grower
                 growers = Decagon.open_pickle()
                 for grower in growers:
@@ -1100,7 +1145,8 @@ def setup_nickname(field_name: str):
     Decagon.write_pickle(growers)
 
 
-def update_field(grower_name: str, field_name: str, only_one_logger: bool = False, logger_name: str = "", subtract_mrid: int = 0, rerun: bool = False):
+def update_field(grower_name: str, field_name: str, only_one_logger: bool = False, logger_name: str = "",
+                 subtract_mrid: int = 0, rerun: bool = False):
     """
     Updates either the whole field or only a specific logger for the field
     and resets previous day switch and removes duplicate data and updates ET at once
@@ -1148,8 +1194,9 @@ def update_field(grower_name: str, field_name: str, only_one_logger: bool = Fals
                                 SQLScripts.remove_duplicate_data(logger)
         SQLScripts.update_logger_et(field_name, logger_name)
     else:
-    # Update all loggers in the field
-        Decagon.only_certain_growers_field_update(grower_name, field_name, get_et=False, get_weather=True, get_data=True,
+        # Update all loggers in the field
+        Decagon.only_certain_growers_field_update(grower_name, field_name, get_et=False, get_weather=True,
+                                                  get_data=True,
                                                   write_to_db=True)
         for grower in growers:
             if grower.name == grower_name:
@@ -1235,7 +1282,7 @@ def update_missing_data_yesterday():
                         update_field(grower.name, field.name, True, logger.name, subtract_mrid=24)
 
 
-def return_active_fields(region:str="Both")->list:
+def return_active_fields(region: str = "Both") -> list:
     """
     Return active fields for a specific region or both regions
     :param region: Default value is "Both", but can be "North" or "South"
@@ -1272,7 +1319,7 @@ def swap_logger(
         old_logger_name: str,
         new_logger_password: str,
         swap_date
-)->bool:
+) -> bool:
     """
     Function sets up a new logger using the information of the old logger
     :param old_logger_id: Old Logger ID
@@ -1398,7 +1445,8 @@ def logger_swap_process():
 
                 print(f'\tSwapping old logger: {old_logger_id} for new logger: {new_logger_id}')
                 # Replace logger
-                replaced_logger_successfully = swap_logger(old_logger_id, new_logger_id, old_logger_name, logger_dict[new_logger_id],
+                replaced_logger_successfully = swap_logger(old_logger_id, new_logger_id, old_logger_name,
+                                                           logger_dict[new_logger_id],
                                                            date_swapped_converted)
 
                 # If logger was replaced update swap flag on G Sheet
@@ -1479,19 +1527,42 @@ def field_uninstall_process():
                                 print("\tUninstalling ", field.name)
                                 crop_type = field.loggers[-1].crop_type
                                 project = dbw.get_db_project(crop_type)
+                                grower_name_db = dbw.remove_unwanted_chars_for_db_dataset(field.grower.name)
                                 field_name_db = dbw.remove_unwanted_chars_for_db_dataset(field.name)
 
                                 # Get uninstallation Date using last date of database
+                                print(f"\t\tGrabbing last data date for uninstall date")
                                 table_id = f"`{project}.{field_name_db}.{field.loggers[-1].name}`"
                                 select_uninstall_date_query = f"select t.date from {table_id} as t order by t.date DESC limit 1"
                                 result_uninstall_date_query = dbw.run_dml(select_uninstall_date_query)
                                 field_uninstallation_date = None
                                 for row in result_uninstall_date_query:
                                     field_uninstallation_date = row.date
-                                print(f"\t\t{field.name}:{field.loggers[-1].name} Last Data Date:{field_uninstallation_date}")
+                                print(
+                                    f"\t\t\t{field.name}:{field.loggers[-1].name} Last Data Date:{field_uninstallation_date}")
                                 if not field_uninstallation_date:
-                                    print(f"\t\tNo data for field to get uninstall date for")
+                                    print(f"\t\t\tNo data for field to get uninstall date for")
                                     continue
+
+                                print(f"\t\tSetting field to uninstalled in portal")
+                                project = f'growers-{YEAR}'
+                                uninstall_dml_field_averages = (
+                                    f'UPDATE `{project}.{grower_name_db}.field_averages` as t '
+                                    f'SET t.order = -999, t.soil_moisture_num = null, '
+                                    f't.soil_moisture_desc = "Uninstalled", t.si_num = null, '
+                                    f't.si_desc = "Uninstalled" WHERE t.field = "{field.nickname}"'
+                                )
+                                dbw.run_dml(uninstall_dml_field_averages)
+                                print(f'\t\t\tField Averages Table Done')
+
+                                uninstall_dml_loggers = (
+                                    f'UPDATE `{project}.{grower_name_db}.loggers` as t '
+                                    f'SET t.order = -999, t.soil_moisture_num = null, '
+                                    f't.soil_moisture_desc = "Uninstalled", t.si_num = null, '
+                                    f't.si_desc = "Uninstalled" WHERE t.field = "{field.nickname}"'
+                                )
+                                dbw.run_dml(uninstall_dml_loggers)
+                                print(f'\t\t\tLoggers Table Done')
 
                                 for logger in field.loggers:
                                     logger.uninstall_date = field_uninstallation_date
@@ -1511,6 +1582,8 @@ def field_uninstall_process():
 
         except IndexError:
             continue
+
+    Decagon.write_pickle(grower_pickle)
     print("Removed the following Fields: ", fields_uninstalled_list)
     print(f"{len(fields_uninstalled_list)} / {num_of_fields_to_uninstall} removed")
 
@@ -1538,24 +1611,27 @@ def change_psi_for_specific_field_logger(field_name: str, logger_name: str, shou
     Decagon.write_pickle(growers)
 
 
+
 def get_soil_type_from_coords(latitude, longitude):
     """
-    Grabs soil type from ADA API given lat, long
-    :param latitude:
-    :param longitude:
-    :return:
+    Grabs soil type from ADA API given latitude and longitude
+    :param latitude: Latitude coordinate
+    :param longitude: Longitude coordinate
+    :return: Dominant soil type (e.g., 'Loam', 'Clay Loam', 'Sandy Loam')
     """
     point_wkt = f"POINT({longitude} {latitude})"
     # SQL query to get soil texture information
     query = f"""
-    SELECT mu.muname, c.cokey
+    SELECT mu.muname, c.localphase, ctg.texdesc, ch.hzname
     FROM mapunit AS mu
     JOIN component AS c ON c.mukey = mu.mukey
     JOIN chorizon AS ch ON ch.cokey = c.cokey
+    JOIN chtexturegrp AS ctg ON ctg.chkey = ch.chkey
     WHERE mu.mukey IN (
             SELECT DISTINCT mukey
             FROM SDA_Get_Mukey_from_intersection_with_WktWgs84('{point_wkt}')
         )
+    ORDER BY ch.hzdept_r ASC
     """
 
     # SDA request payload
@@ -1568,8 +1644,7 @@ def get_soil_type_from_coords(latitude, longitude):
     headers = {'Content-Type': 'application/json'}
     response = requests.post(sda_url, json=request_payload, headers=headers)
 
-    # soil types intentionally formatted, longest to shortest length
-    # so when we check if soil_type in response_string
+    # Soil types ordered from most specific to least specific
     soil_types = ['Silty Clay Loam', 'Sandy Clay Loam',
                   'Sandy Clay', 'Silt Loam', 'Clay Loam',
                   'Silty Clay', 'Loamy Sand', 'Sandy Loam',
@@ -1577,289 +1652,293 @@ def get_soil_type_from_coords(latitude, longitude):
 
     if response.status_code == 200:
         data = response.json()
-        if "Table" in data:
-            # the row in the json containing soil texture information
-            if data["Table"][2]:
-                texture_line = data["Table"][2][0]
-                lowercase_input = texture_line.lower()
+        if "Table" in data and len(data["Table"]) > 2:
 
-                matched_soil_type = None
+            # Step 1: Check muname and localphase first
+            for row in data["Table"][2:]:
+                muname = str(row[0]).lower()
+                localphase = str(row[1]).lower()
 
-                # Iterate through the list of soil types and check for a match
+                # 1st attempt at main name - muname
                 for soil_type in soil_types:
-                    if soil_type.lower() in lowercase_input:
-                        matched_soil_type = soil_type
-                        print(f'Found soil type: {lowercase_input}')
-                        break
-                return matched_soil_type
+                    if soil_type.lower() in muname:
+                        print(f'\t\t\t\tSoil Match: {soil_type}')
+                        return soil_type, False
+
+                # 2nd attempt at localphase
+                for soil_type in soil_types:
+                    if soil_type.lower() in localphase:
+                        print(f'\t\t\t\tSoil Match in localphase: {soil_type}')
+                        return soil_type, False
+
+            # Step 2: Fallback to texdesc but only if hzname is "Ap"
+            for row in data["Table"][2:]:
+                texdesc = str(row[2]).lower()
+                hzname = str(row[3]).lower()
+
+                # Only consider texture description if horizon name is "Ap"
+                if "A" in hzname:
+                    for soil_type in soil_types:
+                        if soil_type.lower() in texdesc:
+                            print(f'\t\t\t\tFallback Match (texdesc with Ap horizon): {soil_type}')
+                            return soil_type, True
+
+            # print("\t\t\t\tNo soil type found based on the given attributes.")
         else:
-            print("No soil information found for the given coordinates.")
+            print("\t\t\t\tNo soil information found for the given coordinates.")
     else:
         print(f"Error: {response.status_code}, {response.text}")
 
+    return None, False
 
-# setup_field()
 
-# addLoggerIDToPickle('z6-07262')
-# setup_uninstallation_dates_2022()
-# setup_installation_dates_2022()
-# print(returnActiveFields("North"))
-# update_field("CM Ochoa", "CMOchoaL36")
-# Decagon.only_certain_growers_field_update("CM Ochoa", "CM OchoaL36", True, True, True, True, False)
-# check_for_new_cimis_stations()
-# check_for_broken_loggers()
-# Decagon.show_pickle()
-# setup_field()
-# update_historical_et_for_perennials()
 
-# growers = Decagon.open_pickle()
-# for grower in growers:
-#     for field in grower.fields:
-#         logger_id_list = []
-#         for ind, logger in enumerate(field.loggers):
-#             if logger.id in logger_id_list:
-#                 print(f"Duplicate Detected: {field.name}:{logger.name}")
-#                 print(f"{logger.id}:{ind}")
-#                 del field.loggers[ind]
-#             logger_id_list.append(logger.id)
-# Decagon.write_pickle(growers)
+def grab_ms_field_names_from_setups_to_pickle():
+    """
+    Function that goes through the pickle and adds a field name (ms) depending on what we have in the logger
+    setups form submission. Field Name (MS) will be useful going forward so we want to start storing that in the
+    Field class
 
-# change_psi_for_specific_field_logger("Lucero Rio VistaB 1-4, 8", "LR-148-NW", should_be_on=True)
-# change_psi_for_specific_field_logger("Lucero Rio VistaB 1-4, 8", "LR-148-S", should_be_on=True)
-# change_psi_for_specific_field_logger("JJB FarmsGI 17", "GI-17-C", should_be_on=True)
-# change_psi_for_specific_field_logger("Lucero Stokes Tyler Island11, 12, 28", "LS-12-C", should_be_on=True)
-# change_psi_for_specific_field_logger("Lucero Thornton StokesStokes 1/2", "LU-Stokes1-NW", should_be_on=True)
+    """
+    growers = Decagon.open_pickle()
 
-# change_psi_for_specific_field_logger("Matteoli BrothersN3", "MB-N3-S", should_be_on=True)
-# change_psi_for_specific_field_logger("Matteoli BrothersN3", "MB-N3-N", should_be_on=True)
-# change_psi_for_specific_field_logger("Lucero BakersfieldHeadquarters", "LB-Blue-W")
-# change_psi_for_specific_field_logger("Lucero BakersfieldHeadquarters", "LB-Green-S")
-# print(returnActiveFields())
-# check_for_missing_report_or_preview_in_pickle()
-# SQLScripts.delete_last_day('stomato-permanents', 'Andrew3106', 'AN-3106-C')
-# read_harvesting_dates()
-# removeField('Lucero Rio Vista','Lucero Rio Vista4')
-# updateField('Lucero Rio Vista', 'Lucero Rio Vista3', True, 'RV-03-N')
-# update_field('Andrew', 'Andrew3106', True, 'AN-3106-C', 24 * 3)
-# Decagon.show_pickle()
-# removeField('Lucero Rio Vista','Lucero Rio Vista2')
-# remove_field('Dougherty Bros', 'Dougherty BrosKRE')
-# remove_field('Rincon Farms Inc.', 'Rincon Farms Inc.2N, 2M, 2S')
-# remove_field('Lucero Mandeville', 'Lucero Mandeville5')
-# remove_field('Lucero Watermark', 'Lucero Watermark5, 6, 7')
-# remove_field('Muller Ag', 'Muller Ag219')
-# remove_field('Lucero Goosepond', 'Lucero Goosepondsepond3')
-# remove_field('Lucero Goosepond', 'Lucero Goosepond2')
-# remove_field('Lucero Goosepond', 'Lucero Goosepond1')
-# remove_logger_id_from_pickle('z6-11580')
-# SQLScripts.removeDuplicateET()
-# SQLScripts.deleteETDay('Matteoli BrothersK7', '2022-07-25', '2022-08-11')
-# SQLScripts.update_field_et('KTN JVYA1')
-# Decagon.remove_grower('Rincon Farms Inc.')
-# setup_field()
-# test_bug('Bone Farms LLCR12-13')
-# check_for_new_cimis_stations()
-# growers = Decagon.open_pickle()
-# for grower in growers:
-#     for field in grower.fields:
-#         if grower.name == 'Bone Farms LLC':
-#             for logger in field.loggers:
-#                 print(f"{field.name}:{logger.name}:{logger.uninstall_date}")
-#             field.cimis_station = '148'
+    # Setup Google Sheet information
+    sheet_tab_name = 'Setup'
+    sheet_tab_name_old = 'Old Setups'
+
+    # Setups service to read google sheets
+    g_sheet = GSheetCredentialSevice.GSheetCredentialSevice()
+    service = g_sheet.getService()
+
+    # Read Google Sheet for Current Logger Setups
+    result = gSheetReader.getServiceRead(sheet_tab_name, NEW_LOGGER_SETUPS_SHEET_ID, service)
+    row_result = result['valueRanges'][0]['values']
+
+    # Read Google Sheet for Current Logger Setups
+    result_old = gSheetReader.getServiceRead(sheet_tab_name_old, NEW_LOGGER_SETUPS_SHEET_ID, service)
+    row_result_old = result_old['valueRanges'][0]['values']
+
+    # NEW LOGGER SETUPS SHEET
+    # Loop through each row in the Google sheet and check if the field is in our current pickle. If it isn't,
+    #  go through the setup process using that row's data.
+    print('\nProcessing new logger setups sheet')
+    for row_index, row in enumerate(row_result):
+        # Ignore header row
+        if row_index == 0:
+            continue
+
+        # Set up variables
+        field_name_col = gSheetReader.getColumnHeader("Field Name (Grower)", row_result)
+        field_name = row[field_name_col].strip()
+
+        field_name_ms_col = gSheetReader.getColumnHeader("Field Name (MS)", row_result)
+        field_name_ms = row[field_name_ms_col].strip()
+
+        grower_name_col = gSheetReader.getColumnHeader("Grower Name", row_result)
+        grower_name = row[grower_name_col].strip()
+
+        field_name_pickle = grower_name + field_name
+
+        for grower in growers:
+            for field in grower.fields:
+                if field.name == field_name_pickle:
+                    print(f'Found field in pickle {field.name}')
+                    if field.name_ms == 'NA' or field.name_ms == '':
+                        # Format the field ms string to be consistent. If it's empty, NA, or 1234, 5678 or 1234 5678, it turns it
+                        # into a string that is comma separated
+                        field_name_ms_formatted = format_field_name_ms_standard(field_name_ms)
+                        print(f'\tFormatted field name ms: {field_name_ms_formatted}')
+                        print(f'\t\tChanged field ms name from {field.name_ms} -> {field_name_ms_formatted}')
+                        field.name_ms = field_name_ms_formatted
+    Decagon.write_pickle(growers)
+
+    growers = Decagon.open_pickle()
+    # OLD LOGGER SETUPS SHEET
+    # Loop through each row in the Google sheet and check if the field is in our current pickle. If it isn't,
+    #  go through the setup process using that row's data.
+    print('\nProcessing old logger setups sheet')
+    for row_index, row in enumerate(row_result_old):
+        # Ignore header row
+        if row_index == 0:
+            continue
+
+        # Set up variables
+        field_name_col = gSheetReader.getColumnHeader("Grower Field", row_result_old)
+        field_name = row[field_name_col].strip()
+
+        field_name_ms_col = gSheetReader.getColumnHeader("MS Field", row_result_old)
+        field_name_ms = row[field_name_ms_col].strip()
+
+        grower_name_col = gSheetReader.getColumnHeader("Grower Name", row_result_old)
+        grower_name = row[grower_name_col].strip()
+
+        field_name_pickle = grower_name + field_name
+
+        for grower in growers:
+            for field in grower.fields:
+                if field.name == field_name_pickle:
+                    print(f'Found field in pickle {field.name}')
+                    if field.name_ms == 'NA' or field.name_ms == '':
+                        # Format the field ms string to be consistent. If it's empty, NA, or 1234, 5678 or 1234 5678, it turns it
+                        # into a string that is comma separated
+                        field_name_ms_formatted = format_field_name_ms_standard(field_name_ms)
+                        print(f'\tFormatted field name ms: {field_name_ms_formatted}')
+                        print(f'\t\tChanged field ms name from {field.name_ms} -> {field_name_ms_formatted}')
+                        field.name_ms = field_name_ms_formatted
+    Decagon.write_pickle(growers)
+
+
+def format_field_name_ms_standard(input_str):
+    """
+    Function that takes a string that could be in several formats
+    1. ''
+    2. 'NA'
+    3. '1234, 5678, 9111'
+    4. '1234 5678 9111'
+    and returns a string that is in either of 2 formats
+    1. 'NA' if '' or 'NA'
+    2. '1234, 5678, 9111' if comma separated or space separated
+    This function is used in conjunction with the Field Name (MA) column from logger setups since the techs can input the
+    field names (ms) in several different ways and we want to handle all of them
+
+    :param input_str:
+    :return:
+    """
+    # Check if the input string is empty or 'NA'
+    if not input_str or input_str.upper() == 'NA':
+        return 'NA'
+
+    # Find all 4-digit numbers in the string
+    numbers = re.findall(r'\b\d{4}\b', input_str)
+
+    # Join the numbers with ', ' if any are found, otherwise return 'NA'
+    if numbers:
+        return ', '.join(numbers)
+    else:
+        return 'NA'
+
+
+def update_uninstalled_table():
+    growers = Decagon.open_pickle()
+    dbw = DBWriter()
+    table_fields = {}
+    already_uninstalled = []
+    regions = ['North', 'South']
+
+    # Fetch all fields from BigQuery (not just uninstalled ones)
+    for region in regions:
+        dataset = f'stomato-info.uninstallation_progress.{region}_2025'
+        dml_statement = f"SELECT Grower, Field FROM {dataset}"
+        result = dbw.run_dml(dml_statement)
+
+        for row in result:
+            table_fields[row[0] + row[1]] = region  # Store fullname to check later
+
+        # check which fields are still not uninstalled
+        dml_statement = f"SELECT Grower, Field FROM {dataset} Where Uninstalled_Date is not null"
+        result = dbw.run_dml(dml_statement)
+        for row in result:
+            already_uninstalled.append(row[0] + row[1])
+
+    # Process each field in the pickle file
+    for grower in growers:
+        for field in grower.fields:
+            region = grower.region
+            dataset = f'stomato-info.uninstallation_progress.{region}_2025'
+            fullname = grower.name + field.nickname  # Unique identifier
+
+            if fullname not in table_fields:  # Field not in BigQuery, insert it
+                print(f"Inserting new field: {grower.name} - {field.nickname}")
+
+                # Handle ir_date being NULL
+                # TODO use the Thresholds object for the IR date
+                ir_date = field.loggers[0].get_ir_date() if field.loggers else None
+                ir_date = 'NULL' if ir_date is None else f"'{ir_date}'"
+
+                # Insert new field with Uninstalled_Date = NULL
+                insert_statement = (
+                    f"INSERT INTO {dataset} "
+                    f"(Grower, Field, Uninstalled_Date, Acres, Latt_Long, Maturity_Date, Number_Of_Loggers, crop_type, ir_date) "
+                    f"VALUES ('{grower.name}', '{field.nickname}', NULL, {field.acres}, '{field.lat},{field.long}', "
+                    f"NULL, {len(field.loggers)}, '{field.loggers[0].crop_type}', {ir_date})"
+                )
+                dbw.run_dml(insert_statement)
+                print(f"Inserted {grower.name} - {field.nickname} into {dataset}")
+
+            # Now add UPDATE logic if field already exists
             # for logger in field.loggers:
-                # if logger.active:
-                    # if logger.name == 'LM-5DEF-E':
-#                         update_field(grower_name=grower.name, field_name=field.name, only_one_logger=True, logger_name=logger.name,
-#                                      subtract_mrid=24*0, rerun=False)
-# #                     # SQLScripts.remove_duplicate_data(logger)
-# #                     # result = logger.read_dxd()
-# #                     # print(result)
-# #                 # print(field.name)
-# #                 # logger.ir_active = True
-# #                 print(f"{field.name} \n\t {logger.name} \n\t\t {logger.ir_active}")
-# Decagon.write_pickle(growers)
+            all_loggers_uninstalled = all(logger.uninstall_date is not None for logger in field.loggers)
+            if all_loggers_uninstalled and fullname not in already_uninstalled:  # If any logger has been uninstalled, update the DB
+                update_statement = (
+                    f"UPDATE {dataset} "
+                    f"SET Uninstalled_Date = '{field.loggers[-1].uninstall_date}' "  # using last logger in case the first ones were swapped and old, the latest in the field should be up to date 
+                    f"WHERE Grower = '{grower.name}' AND Field = '{field.nickname}'"
+                )
+                rows_affected = dbw.run_dml(update_statement)
 
-# check_for_missing_report_or_preview_in_pickle()
+                if rows_affected:
+                    print(f"\tUpdated uninstall date for {grower.name} - {field.nickname}")
+                break  # Only need to update once per field
 
-# Decagon.show_pickle()
-# update_field("Bone FarmsLLC", "Bone Farms LLCR12-13")
-# updateField("Carvalho", "Carvalho316", True, 'CA-316-NW', subtractMRID=24)
-# updateField("Carvalho", "Carvalho308", True, 'CA-308-SW', subtractMRID=24)
-# updateField("Hughes", "Hughes301", True, 'HU-301-NW', subtractMRID=24)
-# updateField("Hughes", "Hughes301", True, 'HU-301-SE', subtractMRID=24)
-# updateField("Hughes", "Hughes303-4", True, 'JH-303_4-NW', subtractMRID=24)
-# updateField("Hughes", "Hughes303-4", True, 'JH-303_4-SE', subtractMRID=24)
-# update_field('Bone Farms LLC', 'Bone Farms LLCF6', True, 'BO-PI-NW', subtract_mrid=24*10, rerun=True)
 
-# update_field('Bone Farms LLC', 'Bone Farms LLCN42 N43', True, 'BF-N4243-NE', subtract_mrid=0, rerun=True)
-# update_field()
-# growers = Decagon.open_pickle()
-# for grower in growers:
-#     # print(grower.name)
-#     # if grower.name == 'Knight Farms':
-#     for field in grower.fields:
-#         if not hasattr(field, 'crop_type'):
-#             print(field.name)
-            # field.crop_type = field.loggers[0].crop_type
-            # print('\t', field.crop_type)
-        # if field.crop_type == 'Pistachio' or field.crop_type == 'Pistachios':
-        #     print(field.name)
-        # if field.name == 'Bullseye FarmsOE10' or field.name == 'Matteoli Brothers42' or field.name == 'CM OchoaA11N':
-        #     for logger in field.loggers:
-                # logger.soil.set_soil_type('Clay')
-                # print(logger.name)
-                # print(logger.soil.field_capacity)
-                # print(logger.soil.wilting_point)
-#                 print(f"{field.acres}: {type(field.acres)}")
-                # field.acres = 113.0
-# Decagon.write_pickle(growers)
-#                 for logger in field.loggers:
-#                     if logger.name == 'BO-PI-NW':
-#                         SQLScripts.remove_duplicate_data(logger)
-# remove_field('OPC', 'OPC5-4')
-# Decagon.only_certain_growers_field_update('T&P', 'T&PCO4', False, True, True, True, True, False)
-# growers = Decagon.open_pickle()
-# # # # testBug('Lucero Watermark9')
-# for g in growers:
-#     for f in g.fields:
-#         if f.active and f.name == 'Meza':
-#             print(f"{f.name} : {f.cimisStation}")
-#             f.cimisStation = '124'
-#             print(f.cimisStation)
-# Decagon.write_pickle(growers)
-# for l in f.loggers:
-# if l.name == 'TAG-WM-SE':
-#                 print(l.active)
-#             if l.id == 'z6-11556':
-#                 print(f.name, ", ", f.id, ", ", l.name, ", ", f.active)
-#             print(g.region, ';', g.name, ';', f.nickname)
+
+
+
+def update_acres_for_region(region, stats_dataset):
+    print(f"Updating Stats for {region}")
+    dbw = DBWriter()
+    installed_acres, uninstalled_acres = Decagon.calculate_stats_for_acres(region)
+
+    if installed_acres or uninstalled_acres:
+        type_installed = f'Acres Installed {region}'
+        type_uninstalled = f'Acres Uninstalled {region}'
+        dml_statement = f"update `{stats_dataset}` set acres = {installed_acres} where type = '{type_installed}'"
+        dbw.run_dml(dml_statement)
+        print(f'\tInstalled acres: {installed_acres}')
+
+        dml_statement = f"update `{stats_dataset}` set acres = {uninstalled_acres} where type = '{type_uninstalled}'"
+        dbw.run_dml(dml_statement)
+        print(f'\tUninstalled acres: {uninstalled_acres}')
+    else:
+        print(f"\tError, not updating stats for {region}")
+
+
+def get_logger_geolocation(logger_id):
+    """
+
+    :param logger_id:
+    :return:
+    """
+    response = Zentra.get_settings(device_sn=logger_id)
+    if response.ok:
+        print(f'\t\t\t\tGrabbing Coords from Zentra: {logger_id}...')
+        content = response.json()
+        lat = content['device']['locations'][0]['latitude']
+        long = content['device']['locations'][0]['longitude']
+    else:
+        print(f'\t\t\t\tError {response.text}')
+        lat, long = '', ''
+    return lat, long
+
+
+def update_technician_portal():
+    """
+    Updates the BQ uninstallation progress table for both regions then calculates the acres un/installed
+    for the technician portal
+    """
+    update_uninstalled_table()
+
+    stats_dataset = 'stomato-info.uninstallation_progress.stats_acres_2025'
+    update_acres_for_region('North', stats_dataset)
+    update_acres_for_region('South', stats_dataset)
+
+# def main():
+#     update_technician_portal()
+#     print('Cloud Run Job success')
+#     sys.exit(0)
 #
-#         if f.name == 'Lucero SE Honkerlake04':
-#             SQLScripts.deleteETDay(f.name, '2022-08-29', '2022-09-05')
-#         if f.name == "Lucero Rio Vista3":
-#             for l in f.loggers:
-#                 if l.id == 'z6-03544':
-#                     l.id = 'z6-12396'
-#                     l.password = '84372-16909'
-#             print(type(f.cimisStation))
-#             for l in f.loggers:
-#                 # print(type(l.gpm))
-#                 # l.gpm = float(1400)
-#                 print(l.gpm)
-#     g.technician.logger_setup_notification_file_path = ''
-# Decagon.write_pickle(growers)
-# techs = Decagon.get_all_technicians(growers)
-# for t in techs:
-#     print(t)
-# t.logger_setup_notification_file_path = ''
-# print(t.logger_setup_notification_file_path)
-# Decagon.write_pickle(growers)
-# uninstallField('OPC', 'OPC3-3')
-# SQLScripts.removeDuplicateET()
-# SQLScripts.update_field_et('Lucero Watermark9')
-# growers = Decagon.open_pickle()
-# toma = TomatoKC.TomatoKC()
-# # dates = ['2022-07-21', '2022-07-22', '2022-07-23', '2022-07-24', '2022-07-25', '2022-07-26', '2022-07-27', '2022-07-28', '2022-07-29',
-# # '2022-07-30', '2022-07-31', '2022-08-01']
-# base = datetime.datetime.today() - datetime.timedelta(days=1)
-# date_list = [(base - datetime.timedelta(days=x)).date() for x in range(12)]
-# for g in growers:
-#     for f in g.fields:
-#         if f.name == 'Lucero SE Honkerlake04':
-#             # SQLScripts.update_field_et(f.name)
-#             for d in date_list:
-#                 kc = TomatoKC.TomatoKC.get_kc(toma, f.loggers[-1].planting_date, d)
-#                 SQLScripts.deleteNegativeET(f.name, d.strftime('%Y-%m-%d'), str(kc))
-#             # SQLScripts.deleteETDay(f.name, date_list[-1].strftime('%Y-%m-%d'))
-#             SQLScripts.update_field_et(f.name)
-
-#             testBug(f.name)
-
-#             for l in f.loggers:
-#                 removeLoggerIDFromPickle(l.id)
-#                 if l.id == 'z6-07113':
-#                     l.prev_day_switch = 240
-# Decagon.write_pickle(growers)
-#         try:
-#             print("Setting up Irrigation Scheduling for Field")
-#             stationNumber = int(f.cimisStation)
-#             startDate = date(datetime.now().year - 1, 1, 1)
-#             endDate = date(datetime.now().year - 1, 12, 31)
-#             SQLScripts.setupIrrigationSchedulingDB(stationNumber, f.name, startDate, endDate,
-#                                                    datetime.now().year)
-#         except Exception as err:
-#             print(err)
-#             continue
-# check_for_missing_report_or_preview_in_pickle()
-# addLoggerIDToPickle('z6-11518')
-# removeField('Bullseye Farms', 'Bullseye FarmsYO2E East')
-# removeField('RnD', 'RnDRate Trial')
-# Decagon.removeGrower('Maricopa Orchards')
-# update_report_and_image_in_pickle('Dougherty BrosHB',
-#                                   'https://datastudio.google.com/reporting/81d4de96-c5d1-4629-b143-7c7324f05d6d',
-#                                   'https://i.imgur.com/q35zn9z.png')
-# setup_field()
-# check_for_new_cimis_stations()
-# Decagon.show_pickle()
-# SQLScripts.removeDuplicateET()
-# growers = Decagon.open_pickle()
-# for g in growers:
-#     for f in g.fields:
-#         if f.name == "Bullseye FarmsYO2E":
-#             for logger in f.loggers:
-#                 update_field(g.name, f.name, True, logger.name, subtract_mrid=19*24)
-
-#             for l in f.loggers:
-#                 if l.id == 'z6-11532':
-#                     l.crashed = False
-#             for l in f.loggers:
-#                 l.prev_day_switch = 0
-#             f.preview_url = 'https://i.imgur.com/AXjQrAw.png'
-#             for l in f.loggers:
-#                 if l.id == 'z6-11959':
-#                     l.id = 'z6-01882'
-#                     l.password = '36070-33974'
-# Decagon.write_pickle(growers)
-# updateField('Lucero Rio Vista', 'Lucero Rio Vista3', True, 'RV-03-N', subtractMRID=0)
-# if os.path.exists('C:\\Users\\javie\\Projects\\S-TOMAto\\credentials.json'):
-#     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "C:/Users/javie/Projects/S-TOMAto/credentials.json"
-# elif os.path.exists('C:\\Users\\javie\\PycharmProjects\\Stomato\\credentials.json'):
-#     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "C:/Users/javie/PycharmProjects/Stomato/credentials.json"
-# elif os.path.exists('C:\\Users\\jsalcedo\\PycharmProjects\\Stomato\\credentials.json'):
-#     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "C:/Users/jsalcedo/PycharmProjects/Stomato/credentials.json"
-# elif os.path.exists('C:\\Users\\jesus\\PycharmProjects\\Stomato\\credentials.json'):
-#     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "C:/Users/jesus/PycharmProjects/Stomato/credentials.json"
-#
-# updateField("Bullseye Farms", "Bullseye FarmsRG28", True, "Bull-RG28-NW", subtractMRID=60)
-# SQLScripts.update_field_et('Maricopa Orchards1831')
-# removeField('F&S', 'F&SVerway FB 1, 8')
-# checkIfIrrSchedulingIsSetUp("Andrew3125")
-# Decagon.show_pickle()
-# updateField("Fantozzi", "Fantozzi2_7 East", True, "DAT-NE", subtractMRID=0)
-# uninstallField('Tim Kalfsbeek', 'Tim KalfsbeekBack 40 Farm')
-# updateGpmAcres()
-# updateRndLoggers()
-# Decagon.show_pickle()
-
-# growers = Decagon.open_pickle()
-# for g in growers:
-#     for f in g.fields:
-#         # if f.name == "KTN JVYA1":
-#         if f.active:
-#             # if f.name == 'Barrios Farms84':
-#             #     f.preview_url = 'https://i.imgur.com/PfzkMVe.png'
-#             print(f.name)
-#             print("\t"+f.preview_url)
-#             print("\t"+f.report_url)
-#             SQLScripts.update_portal_image(g, f, f.preview_url)
-#                 for l in f.loggers:
-#                     if l.name == 'BF-84-NE':
-#                         # l.id = 'z6-11518'
-#                         # l.password = '51428-59165'
-#                         print(l.id)
-#                         print(l.password)
-
-
+# if __name__ == "__main__":
+#     main()
 # if g.name == 'CM Ochoa':
 #     for l in f.loggers:
 #         if l.name == 'CM-L37WM-N' or l.name == 'CM-L37WM2-S' or l.name == 'CM-L35WM-N' or l.name == 'CM-L35WM2-S':
@@ -2083,16 +2162,9 @@ def get_soil_type_from_coords(latitude, longitude):
 # growers = Decagon.open_pickle()
 # for g in growers:
 #     for f in g.fields:
-#         if f.name == "DCBMaricopa West" and g.name == "DCB":
-#             print(type(f.cimisStation))
-#             f.cimisStation = "105"
-#             print(f.cimisStation)
-#
-#             Decagon.write_pickle(growers)
-
-# setup_field()
+#         for logger in f.loggers:
+#             setup_new_logger(logger.id, logger.name, 1, )
 # check_for_missing_report_or_preview_in_pickle()
-# print('Logger setups')
 # logger_setups_process()
 
 # setup_field()
@@ -2101,12 +2173,35 @@ def get_soil_type_from_coords(latitude, longitude):
 # logger_setups_process()
 # notification_setup()
 
-check_for_missing_report_or_preview_in_pickle()
+# check_for_missing_report_or_preview_in_pickle()
 
 # check_for_broken_loggers()
 
 # remove_field('Kubo & Young', 'Kubo & YoungKF1')
 # remove_field('Lucero Rio Vista', 'Lucero Rio VistaD')
 # logger_setups_process()
+# check_for_missing_report_or_preview_in_pickl
+#
+# le()
 
-# field_uninstall_process()
+# Decagon.show_pickle()
+# Decagon.remove_grower('Dwelley Farms')
+
+# logger_setups_process()
+# remove_field()
+# soil = get_soil_type_from_coords(39.503691, -122.281732)
+# print()
+# update_technician_portal()
+# logger_swap_process()
+# check_for_missing_report_or_preview_in_pickle()
+# logger_swap_process()
+growers = Decagon.open_pickle()
+# print(growers)
+cimis = CIMIS()
+cimis_stations_data = cimis.get_list_of_active_eto_stations()
+for grower in growers:
+    for field in grower.fields:
+        if 'GR1' in field.name:
+            print(field.name)
+            setup_irr_scheduling(field, cimis_stations_data)
+# update_uninstalled_table()

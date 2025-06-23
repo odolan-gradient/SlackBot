@@ -1,7 +1,7 @@
 import os
 from calendar import month_name
 from collections import defaultdict, OrderedDict
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, date
 
 import pandas as pd
 from google.auth.transport.requests import Request
@@ -15,6 +15,7 @@ import GSheetCredentialSevice
 import ReportCharts
 import SQLScripts
 import Soils
+from DBWriter import DBWriter
 from GoogleDocsAPI import upload_image_to_drive, insert_into_table_row, insert_image_into_table_cell, header_with_image, \
     append_to_header_center_aligned, make_copy_doc
 from gSheetReader import getServiceRead, getColumnHeader
@@ -208,9 +209,9 @@ def get_column_averaged(table_results, column):
     return total_value / len(table_results)
 
 
-def get_et_hours(table_results, column='et_hours'):
+def get_first_logger_column(table_results, column='et_hours'):
     """
-    Gets the total summed amount of a columns data points
+    Gets the total summed amount of a columns data points for the first logger
     :param table_results:
     :param column:
     :return:
@@ -381,11 +382,12 @@ def get_monthly_column(table_results, column, average=False):
     return ordered_months
 
 
-def get_monthly_column_loggers(table_results, column, average=False):
+def get_monthly_column_loggers(table_results, column, average=False, year=2025):
     """
     Gets and either adds up or averages a column's daily data, grouping it by month, and returns
     a nested dictionary where each logger is a key.
 
+    :param year:
     :param table_results: The table results containing 'daily_hours', 'vpd', and 'date'.
     :param column: The column to process (e.g., 'daily_hours').
     :param average: Boolean flag to determine if the values should be averaged instead of summed.
@@ -393,7 +395,7 @@ def get_monthly_column_loggers(table_results, column, average=False):
              containing either the total or average value.
     """
     column_date = 'date'
-    current_year = datetime.now().year
+    # current_year = datetime.now().year
 
     # Initialize the main dictionary to hold logger data
     results = {}
@@ -407,7 +409,7 @@ def get_monthly_column_loggers(table_results, column, average=False):
         monthly_counts = defaultdict(int)
 
         for date, inches in zip(logger_dates, logger_hours):
-            if inches is not None and date.year == current_year:  # Filter for the current year
+            if inches is not None and date.year == year:  # Filter for the current year
                 # Parse the date and extract the month name
                 month = date.strftime('%B')
                 # Sum or accumulate values for averaging
@@ -530,6 +532,50 @@ def days_above_100(table_results):
         days_over = len([x for x in temp if x > 100.0])
     return days_over
 
+def create_excel_with_loggers_hours(output_file="loggers_hours.xlsx"):
+    """
+    Creates an Excel file listing logger hours for each field and logger.
+    :param output_file: Name of the output Excel file.
+    """
+    growers = Decagon.open_pickle()
+
+    # Initialize a list to store data
+    data = []
+
+    # Iterate through growers
+    try:
+        for grower in growers:
+            if 'Lucero' in grower.name:
+                for field in grower.fields:
+                    # Get the table results for the field
+                    table_results = SQLScripts.get_entire_table_points(
+                        field.name, this_year=True)
+
+                    # Calculate the total loggers hours
+                    logger_hours = get_each_logger_column(table_results, 'daily_hours')
+
+                    # Append each logger's data to the data list
+                    for logger, hours in logger_hours.items():
+                        total_hours = sum(hours)
+                        data.append({
+                            "Grower": grower.name,
+                            "Field Name": field.name,
+                            "Logger": logger,
+                            "Hours": total_hours
+                        })
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+    # Create a DataFrame from the data
+    df = pd.DataFrame(data)
+
+    # Expand the 'Hours' column so each hour appears in a separate row
+    df = df.explode('Hours').reset_index(drop=True)
+
+    # Write the DataFrame to an Excel file
+    df.to_excel(output_file, index=False, engine='openpyxl')
+
+    print(f"Excel file created: {output_file}")
 
 def create_or_use_folder_and_move_document(docs_service, document_id, folder_name):
     """
@@ -603,11 +649,11 @@ def get_grower_field_row(sheet_id, range_name, grower_name, field, result=None):
     :return: List of rows matching the grower and field criteria.
     """
 
-    # g_sheet = GSheetCredentialSevice.GSheetCredentialSevice()
-    # service = g_sheet.getService()
-    #
-    # # Read Google Sheet
-    # result = getServiceRead(range_name, sheet_id, service)
+    g_sheet = GSheetCredentialSevice.GSheetCredentialSevice()
+    service = g_sheet.getService()
+
+    # Read Google Sheet
+    result = getServiceRead(range_name, sheet_id, service)
     row_result = result['valueRanges'][0]['values']
 
     grower_header = getColumnHeader("Grower", row_result)
@@ -750,6 +796,12 @@ def get_document_id(crop_type, version, logger_len):
                 3: "1LVkxftJ1BgDGZUJyd3pGbA0BPXf-QEntnmmLgY3oj24",
                 4: "10WpDZIu_buZVzCanCRjuGhbrXLxrkvHgZTHQefYbKNM",
             },
+            'v3': {
+                1: '1ihLW0bS9GFuQyabhdpr0xTCCJy08dffzfhVE3b7CMGk',
+                2: '1kl1L616oEgM7mswRPTEyguW5eiUZOy9kQqWcbNY8NBs',
+                3: '1we6e8lXoS4Myt2Jj-zjQGyuk5zP-WIHOq-aTE_rO8F8',
+                4: '1tbHlpqq04qFSzDMYwAzxWcpTCwDH71QzxhoMljJK5II'
+            }
         },
         "Default": {
             "v1": "1t0RtF6gMzwtbuG94aBeOhWo1s6zvbdYWZS8PPn2ILhg",
@@ -759,6 +811,12 @@ def get_document_id(crop_type, version, logger_len):
                 3: "1PKEgmFXiSjcK4AjL0gHYxhW6n3ZRZ2YQEg3AttZpHZ0",
                 4: "1SYHXx_MRhZyGCrEdgn0YNMKnknO6eCKn6U365e_-hPg",
             },
+            "v3": {
+                1: '13_UpoIwMTmD1J_O6masrQtKkrKX1xdaUR_XVnJfgi4U',
+                2: '1Zma-R4Yd3ZpsSZCsSYBmjWZiT0U74tkiKa1G3acVKT4',
+                3: '1KvBaiGot4U2oM9l4_TuNT5Yc_dvEWIb90g0VLUC1668',
+                4: '11POzIeASNmLXb0CtWB3nYH8H8xuwkes-cUd_yR0cXmU'
+            }
         },
     }
     crop_docs = doc_ids.get(crop_type, doc_ids["Default"])
@@ -766,6 +824,8 @@ def get_document_id(crop_type, version, logger_len):
         return crop_docs["v1"]
     elif version == "v2" and logger_len in crop_docs["v2"]:
         return crop_docs["v2"][logger_len]
+    elif version == 'v3' and logger_len in crop_docs["v3"]:
+        return crop_docs["v3"][logger_len]
     return None
 
 
@@ -803,31 +863,53 @@ def update_field_yields(sheet_id, growers, range_name='Sheet1'):
 
     print("✅ Field yield updates completed.")
 
+def export_doc_to_pdf(file_id):
+    creds = get_credentials()
+    # Create the Drive and Docs service objects
+    drive_service = build('drive', 'v3', credentials=creds)
+    # docs_service = build('docs', 'v1', credentials=creds)
 
-def modify_doc(grower_name, field_name, version='v2'):
+    request = drive_service.files().export_media(fileId=file_id, mimeType='application/pdf')
+
+    # Step 3: Path to Downloads folder
+    downloads_path = os.path.join(os.path.expanduser('~'), 'Downloads', 'output.pdf')
+
+    # Step 4: Write to Downloads
+    with open(downloads_path, 'wb') as f:
+        f.write(request.execute())
+
+    print(f"PDF saved to {downloads_path}")
+
+def modify_doc(grower, field, version='v3', year='2024'):
     """
     Main driver for filling in the doc template copy with field info
+    :param year:
+    :param version: v1 OG format, v2 separated hours, v3 separated everything
+    :param grower: grower object
+    :param field: field object
     :param grower_name:
     :param field_name:
     """
     creds = get_credentials()
 
     # Field info
-    field = Decagon.get_field(field_name, grower_name)
+
+    # field = Decagon.get_field(field_name, grower_name)
     logger_len = len(field.loggers)
     logger_cardinals = [logger.logger_direction for logger in field.loggers]
     logger_names = [logger.name for logger in field.loggers]
 
     # Check logger hour percent diff
-    table_results = SQLScripts.get_entire_table_points(field_name, this_year=True)
+    table_results = SQLScripts.get_entire_table_points(field.name, year='2024')
     loggers_hours = get_each_logger_column(table_results, 'daily_hours')
+    loggers_inches = get_each_logger_column(table_results, 'daily_inches')
 
     # Create the Drive and Docs service objects
     drive_service = build('drive', 'v3', credentials=creds)
     docs_service = build('docs', 'v1', credentials=creds)
 
     # Main logic
-    name = f"Field Report {field_name}"
+    name = f"Field Report {field.name}"
     document_id = get_document_id(field.crop_type, version, logger_len)
 
     if document_id:
@@ -837,8 +919,8 @@ def modify_doc(grower_name, field_name, version='v2'):
         if field.crop_type == "Tomatoes":
             # T STAR SHEET INFO
 
-            range = "Sheet1"
-            grower_field = get_grower_field_row(SHEET_ID, range, grower_name, field)
+            sheet_range = "Sheet1"
+            grower_field = get_grower_field_row(SHEET_ID, sheet_range, grower.name, field)
             field_averages = get_field_average(grower_field)
             net, paid, green, mold, mot = (
                 field_averages["net_avg"],
@@ -849,19 +931,20 @@ def modify_doc(grower_name, field_name, version='v2'):
             )
 
         # Handle the file/move it to the corresponding folder
-        create_or_use_folder_and_move_document(drive_service, document_id, grower_name)
+        create_or_use_folder_and_move_document(drive_service, document_id, grower.name)
 
     # Get VWC, Inches, PSI, Hours/VPD, Max Temp
     print('Getting table results')
     vwc_data_dict, soil = get_vwc_data(table_results)
     inches_averaged = get_column_averaged(table_results, 'daily_inches')
     inches = get_total_sum_column(table_results, 'daily_inches')  # List
-    total_et_hours = get_et_hours(table_results, 'et_hours')
+    total_et_hours = get_first_logger_column(table_results, 'et_hours')  # Hours
+    total_et_inches = get_first_logger_column(table_results, 'etc')
     total_irrigation_hours = get_total_sum_column(table_results, 'daily_hours')
     month_irrigation = get_monthly_column(table_results, 'daily_inches')  # dict of months inches summed
     month_psi = get_monthly_column(table_results, 'psi', average=True)  # dict of months psi average
     psi_values = get_psi_values(table_results)
-    month_irr_loggers = get_monthly_column_loggers(table_results, 'daily_inches')
+    month_irr_loggers = get_monthly_column_loggers(table_results, 'daily_inches', year=int(year))
 
     # MAX VALUES ON MAX TEMP DAY
     max_temp, max_temp_date, peak_time_on_date = get_max_column_with_date_and_time(table_results, 'ambient_temperature')
@@ -908,6 +991,10 @@ def modify_doc(grower_name, field_name, version='v2'):
         corn_path = 'Logos/corn.png'
         corn_id = upload_image_to_drive(corn_path, drive_service)
         crop_image_url = f'https://drive.google.com/uc?id={corn_id}'
+    if field.crop_type == 'Watermelon':
+        melon_path = 'Logos/watermelon_image.png'
+        melon_id = upload_image_to_drive(melon_path, drive_service)
+        crop_image_url = f'https://drive.google.com/uc?id={melon_id}'
 
     # SETUP HEADER
     nickname = make_field_name(field.nickname)
@@ -940,6 +1027,22 @@ def modify_doc(grower_name, field_name, version='v2'):
         loggers_hours_data = [f"{round(sum(loggers_hours[logger_names[i]]), 1)} Hours" for i in range(logger_len)]
         data = [et] + loggers_hours_data + [acre_ft]
         insert_into_table_row(docs_service, document_id, data, row_index=1)
+    elif version == 'v3':
+        et = f'{round(total_et_hours, 1)}'
+        # Generate headers dynamically
+        headers = [' '] + ['ET Rec'] + logger_cardinals[:logger_len]
+        insert_into_table_row(docs_service, document_id, headers, row_index=0)
+
+        # Generate hours data dynamically
+        loggers_hours_data = [f"{round(sum(loggers_hours[logger_names[i]]), 1)}" for i in range(logger_len)]
+        data = [' '] + [et] + loggers_hours_data
+        insert_into_table_row(docs_service, document_id, data, row_index=1)
+
+        # Acre ft data
+        et_acre_ft = round((total_et_inches / 12), 1)
+        loggers_inches_data = [f"{round((sum(loggers_inches[logger_names[i]]) / 12), 1)}" for i in range(logger_len)]
+        data = [' '] + [et_acre_ft] + loggers_inches_data
+        insert_into_table_row(docs_service, document_id, data, row_index=2)
 
     # ENVIRONMENTAL DATA
     air_temp = f'{round(average_temp, 1)}°F'
@@ -963,85 +1066,38 @@ def modify_doc(grower_name, field_name, version='v2'):
         insert_into_table_row(docs_service, document_id, bodies, table_index=3)
 
     # IMAGES INTO TABLES
-    insert_image_into_table_cell(docs_service, document_id, pie_file_id, table_index=5, row_index=1, height=255,
-                                 width=285)
-    insert_image_into_table_cell(docs_service, document_id, psi_bucket_file_id, table_index=5, row_index=1,
+    insert_image_into_table_cell(docs_service, document_id, pie_file_id, table_index=4, row_index=1, height=255,
+                                 width=285)  # if table index issue it could be the comment box table was deleted
+    insert_image_into_table_cell(docs_service, document_id, psi_bucket_file_id, table_index=4, row_index=1,
                                  cell_index=2, height=265)
-    insert_image_into_table_cell(docs_service, document_id, bar_file_id, table_index=5, row_index=3, cell_index=1,
+    insert_image_into_table_cell(docs_service, document_id, bar_file_id, table_index=4, row_index=3, cell_index=1,
                                  height=215, width=435)
 
     # download_google_doc_as_docx(document_id, drive_service, f'{field_name}.docx')
     print('Data inserted into Google Doc')
 
 
-def create_excel_with_loggers_hours(output_file="loggers_hours.xlsx"):
-    """
-    Creates an Excel file listing logger hours for each field and logger.
-    :param output_file: Name of the output Excel file.
-    """
-    growers = Decagon.open_pickle()
-
-    # Initialize a list to store data
-    data = []
-
-    # Iterate through growers
-    try:
-        for grower in growers:
-            if 'Lucero' in grower.name:
-                for field in grower.fields:
-                    # Get the table results for the field
-                    table_results = SQLScripts.get_entire_table_points(
-                        field.name, this_year=True)
-
-                    # Calculate the total loggers hours
-                    logger_hours = get_each_logger_column(table_results, 'daily_hours')
-
-                    # Append each logger's data to the data list
-                    for logger, hours in logger_hours.items():
-                        total_hours = sum(hours)
-                        data.append({
-                            "Grower": grower.name,
-                            "Field Name": field.name,
-                            "Logger": logger,
-                            "Hours": total_hours
-                        })
-    except Exception as e:
-        print(f"An error occurred: {e}")
-
-    # Create a DataFrame from the data
-    df = pd.DataFrame(data)
-
-    # Expand the 'Hours' column so each hour appears in a separate row
-    df = df.explode('Hours').reset_index(drop=True)
-
-    # Write the DataFrame to an Excel file
-    df.to_excel(output_file, index=False, engine='openpyxl')
-
-    print(f"Excel file created: {output_file}")
-
-
 def main():
     guille = ['Riley Chaney Farms', 'Carvalho', 'Ryan Jones', 'Andrew']
-    redo = ['Turlock FruitCo']
+    redo = ['Bays Ranch31']
     done = []
-    # done = []
     num = 0
     not_done = []  # made it to knight farms index 24 of growers need to run the rest
-    growers = Decagon.open_pickle()
+    old_pickle = "H:\\Shared drives\\Stomato\\" + '2024' + "\\Pickle\\"
+    growers = Decagon.open_pickle('pickle_pre_purge.pickle', specific_file_path=old_pickle)
     try:
         for grower in growers:
-            if grower.name in redo:
+            # if grower.region == 'North':
+            if grower.name == 'Lucero Farms CICC':
                 try:
                     done.append(grower.name)
                     for field in grower.fields:
                         # if field.name in redo:
-                        try:
-                            modify_doc(grower.name, field.name)
-                            # else:
-                            #     not_done.append(field.name)
-                        except Exception as e:
-                            print(f"Error processing field {field.name}: {e}")
-                            not_done.append(field.name)  # append the field that had an error
+                            try:
+                                modify_doc(grower, field, version='v3')
+                            except Exception as e:
+                                print(f"Error processing field {field.name}: {e}")
+                                not_done.append(field.name)  # append the field that had an error
                 except Exception as e:
                     print(f"Error processing grower {grower.name}: {e}")
         print(done)
@@ -1049,20 +1105,109 @@ def main():
         print(f"General error: {e}")
     print(f'Not done: {not_done}')
 
+# TODO
+#  Also should dynamically place images on the page to fit the page without me having to modify each by hand
 
-# create_excel_with_loggers_hours()
-main()
+import pandas as pd
+from openpyxl.utils import get_column_letter
+from openpyxl.styles import Font, Alignment
 
-# growers = Decagon.open_pickle('pickle_pre_purge.pickle')
-# # update_field_yields(SHEET_ID, growers)
-# total_net_yield = 0
-# count = 0
-# for grower in growers:
-#     for field in grower.fields:
-#         if field.net_yield is not None:
-#             total_net_yield += field.net_yield
-#             count += 1
-#
-# avg_net_yield = total_net_yield / count if count > 0 else 0
-# print(avg_net_yield)
-# 45.1 49, 52,
+def export_hours_excel_sorted_by_logger(year='2025', target_grower_name='Lucero Rio Vista'):
+    growers = Decagon.open_pickle('2025_pickle.pickle')
+    end_date = date(2025, 5, 31)
+    start_date = end_date - timedelta(days=17)
+    rows = []
+
+    for grower in growers:
+        if grower.name != target_grower_name:
+            continue
+
+        for field in sorted(grower.fields, key=lambda f: f.name):
+            field_name = field.name
+            rows.append({'field_name': f'FIELD: {field_name}', 'logger_name': '', 'date': '', 'daily_inches': '', 'daily_hours': ''})
+
+            for logger in sorted(field.loggers, key=lambda l: l.name):  # sort loggers alphabetically
+                logger_name = logger.name
+                logger_data_dict = SQLScripts.get_db_table(field, logger, year)
+
+                if logger_name not in logger_data_dict:
+                    continue
+
+                logger_data = logger_data_dict[logger_name]
+                dates = logger_data.get('date', [])
+                inches = logger_data.get('daily_inches', [])
+                hours = logger_data.get('daily_hours', [])
+
+                logger_entries = []
+
+                for date_str, inch, hour in zip(dates, inches, hours):
+                    try:
+                        date_obj = pd.to_datetime(date_str).date()
+                    except:
+                        continue
+
+                    if start_date <= date_obj <= end_date:
+                        logger_entries.append({
+                            'field_name': '',
+                            'logger_name': logger_name,
+                            'date': date_obj,
+                            'daily_inches': inch,
+                            'daily_hours': hour
+                        })
+
+                if logger_entries:
+                    logger_entries.sort(key=lambda x: x['date'])
+                    rows.extend(logger_entries)
+
+                    # Add logger total row
+                    total_inches = sum(r['daily_inches'] for r in logger_entries if r['daily_inches'] not in [None, ''])
+                    total_hours = sum(r['daily_hours'] for r in logger_entries if r['daily_hours'] not in [None, ''])
+                    rows.append({
+                        'field_name': '',
+                        'logger_name': 'TOTAL',
+                        'date': '',
+                        'daily_inches': round(total_inches, 2),
+                        'daily_hours': round(total_hours, 2)
+                    })
+                    rows.append({'field_name': '', 'logger_name': '', 'date': '', 'daily_inches': '', 'daily_hours': ''})  # blank after logger
+
+            rows.append({'field_name': '', 'logger_name': '', 'date': '', 'daily_inches': '', 'daily_hours': ''})  # spacer after field
+
+    df = pd.DataFrame(rows)
+    output_file = f'{target_grower_name}_logger_summary.xlsx'
+
+    # Write to Excel
+    with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name='Logger Summary', index=False)
+
+        worksheet = writer.sheets['Logger Summary']
+        bold_font = Font(bold=True)
+        center_align = Alignment(horizontal='center')
+
+        for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row):
+            if row[0].value and row[0].value.startswith('FIELD:'):
+                worksheet.merge_cells(start_row=row[0].row, start_column=1, end_row=row[0].row, end_column=5)
+                row[0].font = bold_font
+                row[0].alignment = center_align
+            elif row[1].value == 'TOTAL':
+                for cell in row:
+                    cell.font = bold_font
+
+        # Auto-size columns
+        for col in worksheet.columns:
+            max_length = 0
+            column = get_column_letter(col[0].column)
+            for cell in col:
+                try:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+                except:
+                    pass
+            worksheet.column_dimensions[column].width = max_length + 2
+
+    print(f"Exported grouped Excel file to: {output_file}")
+
+
+
+
+# export_lucero_rio_vista_excel_sorted_by_logger(target_grower_name='Lucero Tyler Island')
