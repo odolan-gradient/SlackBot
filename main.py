@@ -66,11 +66,11 @@ def generate_options(list_of_items):
     ]
 
 
-def delete_psi_values_for_specific_logger(grower_name, field_names, logger_name):
+def delete_psi_values_for_specific_logger(grower_name, field_name, logger_name):
     growers = SharedPickle.open_pickle()
     dbw = DBWriter.DBWriter()
-    project = SharedPickle.get_project(field_names[0], grower_name)
-    field_dataset = dbw.remove_unwanted_chars_for_db_dataset(field_names[0])
+    project = SharedPickle.get_project(field_name, grower_name)
+    field_dataset = dbw.remove_unwanted_chars_for_db_dataset(field_name)
     dml = (f"UPDATE `{project}.{field_dataset}.{logger_name}` SET psi = NULL, sdd = NULL, canopy_temperature = NULL WHERE TRUE")
     try:
         dbw.run_dml(dml, project=project)
@@ -78,13 +78,13 @@ def delete_psi_values_for_specific_logger(grower_name, field_names, logger_name)
         for grower in growers:
             if grower.name == grower_name:
                 for field in grower.fields:
-                    if field.name in field_names:
+                    if field.name == field_name:
                         for logger in field.loggers:
                             if logger.name == logger_name:
                                 logger.ir_active = False
                                 logger.consecutive_ir_values = deque()
         SharedPickle.write_pickle(growers)
-        return f"Cleared PSI for {logger_name} in {field_names}"
+        return f"Cleared PSI for {logger_name} in {field_name}"
     except Exception as e:
         return f"Error clearing {logger_name}: {e}"
 
@@ -1572,10 +1572,10 @@ def delete_psi_values_for_logger_and_range(
 
         SharedPickle.write_pickle(growers)
 
-        return f"✅ Cleared PSI for {logger_name} in {field_name} from {start_date} to {end_date}"
+        return f"Cleared PSI for {logger_name} in {field_name} from {start_date} to {end_date}"
 
     except Exception as e:
-        return f"❌ Error clearing PSI for {logger_name}: {e}"
+        return f"Error clearing PSI for {logger_name}: {e}"
 
 # Entry point for Google Cloud Functions
 @flask_app.route('/slack/events', methods=['POST'])
