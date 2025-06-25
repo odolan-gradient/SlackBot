@@ -1924,69 +1924,116 @@ def get_logger_table(logger_name: str, year='2025', growers=None) -> dict:
     return result_dict
 
 
-def fetch_values_for_date(project, field_name, logger_name, date):
+def get_values_for_date(project, field_name, logger_name, date):
     """
-    Fetch vwc_1, vwc_2, vwc_3 values for a specific date from the database.
+    Get vwc_1, vwc_2, vwc_3 values for a specific date from the DB.
     """
     field_name = dbwriter.remove_unwanted_chars_for_db_dataset(field_name)
     dataset_id = project + '.' + field_name + '.' + logger_name
     dataset_id = "`" + dataset_id + "`"
 
-    # Format the date for SQL query
     date_s = date.strftime("%Y-%m-%d")
     date_s = "'" + date_s + "'"
 
-    # Query to fetch values for the specific date
+    # Query to get values for the specific date
     query = f"""
-    SELECT vwc_1, vwc_2, vwc_3
+    SELECT vwc_1, vwc_2, vwc_3, field_capacity, wilting_point
     FROM {dataset_id}
     WHERE date = {date_s}
     """
 
-    # Execute query and fetch results
-    result = dbwriter.run_dml(query, project=project)
-    result_list = list(result)  # Convert RowIterator to list
+    rows = dbwriter.run_dml(query, project=project)
 
-    if result_list:
-        return result_list[0]  # Return the first result
+    # Convert the RowIterator to a list
+    result = list(rows)
+
+    if result:
+        return result[0]
     else:
         return None
 
-
-def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_date):
+def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_date, vwcs):
+    # Ensure field_name is safe for database use
     field_name = dbwriter.remove_unwanted_chars_for_db_dataset(field_name)
 
-    # Setup dataset_id from passed in field and logger_id parameters
     dataset_id = project + '.' + field_name + '.' + logger_name
     dataset_id = "`" + dataset_id + "`"
 
-    # Turn date string into datetimes
+    # Parse dates
     start_date_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_date_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    today = datetime.today()
+
+    # Ensure the end_date is not today or in the future
+    if end_date_dt >= today:
+        raise ValueError("end_date cannot be today or in the future. Please provide a valid date range.")
+
+    # Fetch the previous day's data for the start_date
     start_date_prev_day = start_date_dt - timedelta(days=1)
 
     # Fetch values from the day before start_date
-    previous_day_values = fetch_values_for_date(project, field_name, logger_name, start_date_prev_day)
+    previous_day_values = get_values_for_date(project, field_name, logger_name, start_date_prev_day)
 
     if previous_day_values:
-        vwc_1_value, vwc_2_value, vwc_3_value = previous_day_values
+        vwc_1_value, vwc_2_value, vwc_3_value, fc, wp = previous_day_values
         current_date = start_date_dt
 
+        # Loop through each date in the range and update/insert VWC data
         while current_date <= end_date_dt:
             current_date_s = current_date.strftime("%Y-%m-%d")
             current_date_s = "'" + current_date_s + "'"
 
-            print(f'Updating DB for date: {current_date_s}')
-            dml = (
-                f"UPDATE {dataset_id} "
-                f"SET vwc_1 = {vwc_1_value}, "
-                f"    vwc_2 = {vwc_2_value}, "
-                f"    vwc_3 = {vwc_3_value} "
-                f"WHERE date = {current_date_s}"
-            )
-            dbwriter.run_dml(dml, project=project)
+            # Check if data exists for the current date
+            check_query = f"""
+            SELECT COUNT(*) as count
+            FROM {dataset_id}
+            WHERE date = {current_date_s}
+            """
 
-            # Move to the next date
+            check_rows = dbwriter.run_dml(check_query, project=project)
+            check_result = list(check_rows)
+
+            # Build the VWC-related parts of the DML based on the 'vwcs' parameter
+            vwc_set_clauses = []
+            vwc_insert_columns = []
+            vwc_insert_values = []
+
+            if 'VWC 1' in vwcs:
+                vwc_set_clauses.append(f"vwc_1 = {vwc_1_value}")
+                vwc_insert_columns.append("vwc_1")
+                vwc_insert_values.append(vwc_1_value)
+
+            if 'VWC 2' in vwcs:
+                vwc_set_clauses.append(f"vwc_2 = {vwc_2_value}")
+                vwc_insert_columns.append("vwc_2")
+                vwc_insert_values.append(vwc_2_value)
+
+            if 'VWC 3' in vwcs:
+                vwc_set_clauses.append(f"vwc_3 = {vwc_3_value}")
+                vwc_insert_columns.append("vwc_3")
+                vwc_insert_values.append(vwc_3_value)
+
+            if check_result and check_result[0][0] == 0:
+                # No data exists for this date, insert a new row
+                insert_dml = (
+                    f"INSERT INTO {dataset_id} "
+                    f"(date, {', '.join(vwc_insert_columns)}, field_capacity, wilting_point) "
+                    f"VALUES ({current_date_s}, {', '.join(map(str, vwc_insert_values))}, {fc}, {wp})"
+                )
+                dbwriter.run_dml(insert_dml, project=project)
+                print(f'Inserted new row for date: {current_date_s}')
+            else:
+                # Update existing row
+                update_dml = (
+                    f"UPDATE {dataset_id} "
+                    f"SET {', '.join(vwc_set_clauses)}, "
+                    f"    field_capacity = {fc}, "
+                    f"    wilting_point = {wp} "
+                    f"WHERE date = {current_date_s}"
+                )
+                dbwriter.run_dml(update_dml, project=project)
+                print(f'Updated row for date: {current_date_s}')
+
             current_date += timedelta(days=1)
 
         print('Date range update completed.')
