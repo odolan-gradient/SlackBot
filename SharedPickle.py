@@ -120,7 +120,7 @@ def open_pickle(file_id=PICKLE_FILE_ID):
             supportsAllDrives=True  # need for shared drives
         ).execute()
 
-        print(f'Pickle ID: {file_id}')
+
         if check_if_pickle_valid(metadata):
             # request = service.files().get_media(fileId=file_id, fields='name, modifiedTime', supportsAllDrives=True)
 
@@ -139,7 +139,7 @@ def open_pickle(file_id=PICKLE_FILE_ID):
             # Use CustomUnpickler to load the data, treating WindowsPath as PureWindowsPath
             unpickler = CustomUnpickler(fh)
             data = unpickler.load()
-
+            print(f'Pickle Opened')
             return data
         else:
             print(f'Error Pickle sync issue not using todays pickle')
@@ -181,7 +181,7 @@ def check_if_pickle_valid(metadata):
     # Convert to California time (PDT in April)
     california_tz = pytz.timezone("America/Los_Angeles")
     local_time = utc_time.astimezone(california_tz)
-    print(f'Pickle timestamp: {local_time}')
+    # print(f'Pickle timestamp: {local_time}')
     # Check if the date matches today's date in California
     today_local = datetime.now(california_tz).date()
     is_today = local_time.date() == today_local
@@ -244,34 +244,38 @@ def show_pickle():
     return pickle_contents
 
 
-def get_grower(grower_name: str):
+def get_grower(grower_name: str, growers = None):
     """
     Function to get a grower object from the pickle
 
+    :param growers:
     :param grower_name: String of grower name
     :return: Grower object
     """
-    growers = open_pickle()
+    if growers is None:
+        growers = open_pickle()
     for grower in growers:
         if grower.name == grower_name:
             return grower
 
 
-def get_field(field_name: str, grower_name: str = ''):
+def get_field(field_name: str, grower_name: str = '', growers = None):
     """
     Function to get a field
 
+    :param growers: Pickle
     :param field_name: String for the field name
     :param grower_name: Optional parameter of the string for the grower name
     :return: Field object of the field
     """
     if grower_name:
-        grower = get_grower(grower_name)
+        grower = get_grower(grower_name, growers)
         for field in grower.fields:
             if field.name == field_name:
                 return field
     else:
-        growers = open_pickle()
+        if growers is None:
+            growers = open_pickle()
         for grower in growers:
             for field in grower.fields:
                 if field.name == field_name:
@@ -297,24 +301,26 @@ def get_fields(field_names: list[str], growers: list = None):
     return result
 
 
-def get_project(field_name: str, grower_name: str = ''):
+def get_project(field_name: str, grower_name: str = '', growers=None):
     """
     Function to get a fields project
 
+    :param growers: Pickle
     :param field_name: String for the field name
     :param grower_name: Optional parameter of the string for the grower name
     :return: Project of the field
     """
     dbw = DBWriter()
     if grower_name:
-        grower = get_grower(grower_name)
+        grower = get_grower(grower_name, growers=growers)
         for field in grower.fields:
             if field.name == field_name:
                 crop_type = field.loggers[-1].crop_type
                 project = dbw.get_db_project(crop_type)
                 return project
     else:
-        growers = open_pickle()
+        if growers is None:
+            growers = open_pickle()
         for grower in growers:
             for field in grower.fields:
                 if field.name == field_name:
