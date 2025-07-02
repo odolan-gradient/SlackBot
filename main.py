@@ -274,16 +274,16 @@ def handle_soil_and_psi_selections(ack, body, respond):
         field = user_selections[user_id]['fields']
         grower = user_selections[user_id]['grower']
         grower_name = grower.name
-
+        old_soil_type = ''
         for logger in loggers:
-            change_logger_soil_type(logger, field, grower_name, soil_type)
+            old_soil_type = change_logger_soil_type(logger, field, grower_name, soil_type)
         response_text = f"Changing the following:\nLoggers: {', '.join(loggers)} to Soil Type: {soil_type}"
         respond(text=response_text)
 
         # Log the request to Google Sheets
         request_name = 'Change Soil Type'
         logger_str = ', '.join(loggers)
-        info = f'{field} {logger_str} {soil_type}'
+        info = f'{field} {logger_str} from {old_soil_type} to {soil_type}'
         username = body['user']['name']
         SheetsHandler.log_request_to_sheet(request_name, username, info)
 
@@ -911,6 +911,7 @@ def handle_grower_menu(ack, body, client, respond):
         print('Showing pickle')
         request_name = 'Show Pickle'
         info = selected_value
+        SheetsHandler.log_request_to_sheet(request_name, username, info)
 
 # def handle_billing(ack, body, respond):
 
@@ -1474,7 +1475,7 @@ def change_logger_soil_type(logger_name: str, field_names: str, grower_name: str
     growers = SharedPickle.open_pickle()
     dbw = DBWriter.DBWriter()
     crop_type = None
-
+    old_soil_type = ''
     # Change soil type in the pickle
     print('-Changing soil type in the pickle')
     for grower in growers:
@@ -1505,8 +1506,10 @@ def change_logger_soil_type(logger_name: str, field_names: str, grower_name: str
         print()
         print(f'Soil type for {logger_name} changed from {old_soil_type} to {new_soil_type}')
         print()
+
     else:
         print('Error: problem finding logger')
+    return old_soil_type
 
 def delete_psi_range(grower_name, field_name, logger_name, start_date, end_date):
     dbw = DBWriter.DBWriter()
