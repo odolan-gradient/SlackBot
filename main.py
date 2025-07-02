@@ -1,5 +1,6 @@
 import os
 from collections import defaultdict, deque
+from datetime import date
 
 import requests
 from dotenv import load_dotenv
@@ -1033,6 +1034,7 @@ def logger_and_toggle_menu(logger_list, preselected=None, selected_state=None):
 
 
 def date_picker_block():
+    today = date.today().isoformat()  # e.g. "2025-07-02"
     return [
         {
             "type": "section",
@@ -1048,7 +1050,7 @@ def date_picker_block():
                     "emoji": True
                 },
                 "action_id": "start_date_select",
-                "initial_date": "2025-01-01"  # Optional: initial date for the picker
+                "initial_date": today
             }
         },
         {
@@ -1065,7 +1067,7 @@ def date_picker_block():
                     "emoji": True
                 },
                 "action_id": "end_date_select",
-                "initial_date": "2025-01-02"  # Optional: initial date for the picker
+                "initial_date": today
             }
         }
     ]
