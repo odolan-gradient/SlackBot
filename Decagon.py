@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from google.cloud import bigquery
 
+import SharedPickle
 import Technician
 from CIMIS import CIMIS
 from CimisStation import CimisStation
@@ -745,7 +746,7 @@ def only_certain_growers_fields_update(
     :param write_to_db: Boolean, True if you want to write to DB, False otherwise
     :param check_for_notifications: Boolean, True if you want to check for notifications, False otherwise
     """
-    allGrowers = open_pickle()
+    allGrowers = SharedPickle.open_pickle()
     cimis_stations_pickle = open_pickle(filename="cimisStation.pickle")
     for g in allGrowers:
         for f in g.fields:
@@ -766,7 +767,7 @@ def only_certain_growers_fields_update(
                     specific_start_date=specific_start_date,
                     specific_end_date=specific_end_date,
                 )
-    write_pickle(allGrowers)
+    SharedPickle.write_pickle(allGrowers)
 
 
 def only_certain_growers_field_logger_update(

@@ -1,19 +1,22 @@
 import os
-from collections import defaultdict, deque
-from datetime import date
+from collections import defaultdict
 
-import requests
 from dotenv import load_dotenv
 from flask import Flask, request
 from slack_bolt import App
 from slack_bolt.adapter.flask import SlackRequestHandler
-from slack_sdk.errors import SlackApiError
 
-import DBWriter
+import Decagon
 import SQLScripts
 import SharedPickle
 import SheetsHandler
 import Soils
+from blocks import field_list_menu, logger_and_soil_list_menu, logger_and_toggle_menu, logger_and_dates_menu, \
+    logger_select_block, main_menu, get_soil_menu, show_pickle_menu, use_prev_days_menu, grower_select_block, \
+    get_field_location_menu, get_coord_location_menu, turn_on_psi_menu, change_soil_menu, logger_delete_menu, \
+    modify_value_selector_menu, change_gpm_menu, logger_and_gpm_menu, run_field_menu
+from slackFunctions import change_logger_soil_type, delete_psi_values_for_logger_and_range, bulk_toggle_psi, \
+    delete_psi_values_for_specific_logger, update_gpm_irrigation_acres_for_logger
 
 load_dotenv()
 
@@ -41,95 +44,20 @@ def main_menu_command(ack, body, respond):
         # U06NJRAT1T2 Ollie
         # Javi 'U4KFKMH8C'
         if body['user_id'] in ['U4KFKMH8C']:
-            menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Show Pickle', 'Use Previous Days VWC', 'Add Grower Billing', 'Get Field Location']
+            menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Show Pickle', 'Use Previous Days VWC', 'Add Grower Billing', 'Get Field Location',
+                            'Change GPM / Irr Acres']
 
         # just Ollie
         elif body['user_id'] in ['U06NJRAT1T2']:
             menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Delete PSI values', 'Show Pickle', 'Use Previous Days VWC',
-                            'Modify Values', 'Add Grower Billing', 'Get Field Location']
+                            'Modify Values', 'Add Grower Billing', 'Get Field Location', 'Change GPM / Irr Acres', 'Run Field']
         else:
-            menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Delete PSI values', 'Show Pickle', 'Add Grower Billing', 'Get Field Location']
+            menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Delete PSI values', 'Show Pickle', 'Add Grower Billing', 'Get Field Location',
+                            'Change GPM / Irr Acres']
         main_menu(ack, respond, menu_options)
     except Exception as e:
         print(f"Error: {e}")
         respond("An error occurred while processing your request.")
-
-
-def generate_options(list_of_items):
-    return [
-        {
-            "text": {
-                "text": item,
-                "type": "plain_text"
-            },
-            "value": item
-        } for item in list_of_items
-    ]
-
-
-def delete_psi_values_for_specific_logger(grower_name, field_name, logger_name, growers=None):
-    if growers is None:
-        growers = SharedPickle.open_pickle()
-    dbw = DBWriter.DBWriter()
-    project = SharedPickle.get_project(field_name, grower_name, growers=growers)
-    field_dataset = dbw.remove_unwanted_chars_for_db_dataset(field_name)
-    dml = (f"UPDATE `{project}.{field_dataset}.{logger_name}` SET psi = NULL, sdd = NULL, canopy_temperature = NULL WHERE TRUE")
-    try:
-        dbw.run_dml(dml, project=project)
-        # update pickle
-        for grower in growers:
-            if grower.name == grower_name:
-                for field in grower.fields:
-                    if field.name == field_name:
-                        for logger in field.loggers:
-                            if logger.name == logger_name:
-                                logger.ir_active = False
-                                # logger.consecutive_ir_values = deque()
-        SharedPickle.write_pickle(growers)
-        return f"Cleared PSI for {logger_name} in {field_name}"
-    except Exception as e:
-        return f"Error clearing {logger_name}: {e}"
-
-def bulk_delete_psi(grower_name: str, fields: list[str], to_delete: list[str]) -> list[str]:
-    """
-    Clears psi/sdd/canopy_temperature for the given grower across all specified fields/loggers.
-    Opens the pickle once, writes it once, and runs all DMLs in one go.
-    Returns a list of status messages.
-    """
-    growers = SharedPickle.open_pickle()
-    dbw = DBWriter.DBWriter()
-    get_project = SharedPickle.get_project
-
-    results: list[str] = []
-    # iterate growers → fields → loggers
-    for g in growers:
-        if g.name != grower_name:
-            continue
-        for field in g.fields:
-            if field.name not in fields:
-                continue
-            dataset = dbw.remove_unwanted_chars_for_db_dataset(field.name)
-            project = get_project(field.name, grower_name)
-            for lg in field.loggers:
-                if lg.name not in to_delete:
-                    continue
-                table = lg.name
-                dml = (
-                    f"UPDATE `{project}.{dataset}.{table}` "
-                    "SET psi = NULL, sdd = NULL, canopy_temperature = NULL WHERE TRUE"
-                )
-                print(dml)
-                try:
-                    dbw.run_dml(dml, project=project)
-                    # update in-memory pickle object
-                    lg.ir_active = False
-                    lg.consecutive_ir_values = deque()
-                    results.append(f"Cleared PSI for {table} in {field.name}")
-                except Exception as e:
-                    results.append(f"❌ Error clearing {table}: {e}")
-
-    SharedPickle.write_pickle(growers)
-    return results
 
 
 # ----------------------------------------------------
@@ -158,6 +86,94 @@ def handle_main_menu(ack, body, respond):
         get_field_location_menu(ack, respond)
     elif menu_option == 'Check if inside MS field':
         get_coord_location_menu(ack, respond)
+    elif menu_option == 'Change GPM / Irr Acres':
+        change_gpm_menu(ack,respond,grower_names)
+    elif menu_option == 'Run Field':
+        run_field_menu(ack, respond, grower_names)
+
+
+
+@app.action("grower_select_psi")
+@app.action("grower_select_change_soil")
+@app.action("grower_select_show")
+@app.action("grower_select_delete_psi")
+@app.action("grower_select_prev_day")
+@app.action("grower_select_billing")
+@app.action("grower_select_modify_values")
+@app.action("grower_select_gpm")
+@app.action("grower_select_run_field")
+def handle_grower_menu(ack, body, client, respond):
+    ack()
+
+    # Extract values from the actions
+    grower_action_id = body['callback_id']
+    selected_value = body['actions'][0]['selected_options'][0]['value']
+    # Ampersands come in weird through slack
+    selected_value = fix_ampersand(selected_value)
+    print(selected_value)
+    grower = SharedPickle.get_grower(selected_value)
+    field_list = [field.name for field in grower.fields]
+    username = body['user']['name']
+
+    # Add to selections
+    user_id = body['user']['id']
+    user_selections[user_id]['grower'] = grower
+
+    if grower_action_id == 'grower_select_psi':
+        action_id = 'field_select_psi'
+        field_list_menu(ack, respond, field_list, action_id)
+
+    elif grower_action_id == 'grower_select_change_soil':
+        action_id = 'field_select_change_soil'
+        field_list_menu(ack, respond, field_list, action_id)
+
+    elif grower_action_id == 'grower_select_delete_psi':
+        action_id = 'field_select_delete_psi'
+        field_list_menu(ack, respond, field_list, action_id)
+
+    elif grower_action_id == 'grower_select_prev_day':
+        action_id = 'field_select_prev_day'
+        field_list_menu(ack, respond, field_list, action_id)
+
+    elif grower_action_id == 'grower_select_modify_values':
+        action_id = 'field_select_modify_values'
+        field_list_menu(ack, respond, field_list, action_id)
+    elif grower_action_id == 'grower_select_gpm':
+           action_id = 'field_select_gpm'
+           field_list_menu(ack, respond, field_list, action_id)
+    elif grower_action_id == 'grower_select_run_field':
+            # Show them the field picker for “Run Field”
+            action_id = 'field_select_run_field'
+            field_list_menu(ack, respond, field_list, action_id)
+            return
+
+    elif grower_action_id == 'grower_select_show':
+
+        # SheetsHandler.log_request_to_sheet(request_name, username, info)
+
+        grower = SharedPickle.get_grower(selected_value)
+        pickle_contents = grower.to_string()
+
+        if len(pickle_contents) > 16000:
+            chunks = [pickle_contents[i:i + 16000] for i in range(0, len(pickle_contents), 16000)]
+            for chunk in chunks:
+                client.chat_postMessage(
+                    channel=body['channel']['id'],
+                    text=chunk,
+                    as_user=True
+                )
+        else:
+            client.chat_postMessage(
+                channel=body['channel']['id'],
+                text=pickle_contents,
+                as_user=True
+            )
+
+        # Log the request to Google Sheets
+        print('Showing pickle')
+        request_name = 'Show Pickle'
+        info = selected_value
+        SheetsHandler.log_request_to_sheet(request_name, username, info)
 
 @app.action("get_field_location")
 def handle_field_location_lookup(ack, body, respond):
@@ -396,6 +412,9 @@ def handle_prev_day_selections(ack, body, respond):
 @app.action("field_select_delete_psi")
 @app.action("field_select_prev_day")
 @app.action("field_select_modify_values")
+@app.action("field_select_modify_values")
+@app.action("field_select_gpm")
+@app.action("field_select_run_field")
 def handle_field_select(ack, body, respond):
     ack()
     print('Handling Field Select')
@@ -459,6 +478,89 @@ def handle_field_select(ack, body, respond):
         user_selections[user_id]['logger_select_modify_values'] = logger_list
         blocks = logger_select_block(logger_list, action_id)
         respond(blocks=blocks)
+    elif action_id == 'field_select_gpm':
+        user_selections[user_id]['fields'] = field_names
+        blocks = logger_and_gpm_menu(ack, respond, logger_list)
+        respond(blocks=blocks)
+    elif action_id == 'field_select_run_field':
+        # Save the selected field
+        user_selections[user_id]['fields'] = field_names
+
+        Decagon.only_certain_growers_fields_update(fields=field_names, get_data=True, get_weather=True, write_to_db=True, write_to_portal=True, subtract_from_mrid=200)
+        # my_service.run_field(
+        #     grower=user_selections[user_id]['grower'].name,
+        #     field=field_names[0]
+        # )
+
+        respond(text=f"Ran field `{field_names[0]}` for grower `{user_selections[user_id]['grower'].name}`…")
+        user_selections.pop(user_id, None)
+        return
+
+@app.action("logger_select_gpm")
+@app.action("update_fields_select")
+@app.action("confirm_gpm_update")
+def handle_confirm_gpm(ack, body, respond):
+    ack()
+    user_id = body["user"]["id"]
+    action_id = body["actions"][0]["action_id"]
+    # store the picked loggers
+    if action_id == "logger_select_gpm":
+        selected = [opt["value"] for opt in body["actions"][0]["selected_options"]]
+        user_selections[user_id]["logger_select_gpm"] = selected
+        logger_and_gpm_menu(ack, respond, selected)
+        return
+
+    # 2) User checked which values to update
+    if action_id == "update_fields_select":
+        checked = {opt["value"] for opt in body["actions"][0]["selected_options"]}
+        user_selections[user_id]["fields_to_update"] = checked
+        return
+
+    # 3) User pressed Confirm
+    if action_id == "confirm_gpm_update":
+        # pull everything back out
+        grower     = user_selections[user_id]["grower"]
+        field_name = user_selections[user_id]["fields"][0]
+        loggers    = user_selections[user_id]["logger_select_gpm"]
+        to_update  = user_selections[user_id].get("fields_to_update", set())
+        vals       = body["state"]["values"]
+
+        # only parse inputs if they asked for them
+        new_gpm = None
+        if "gpm" in to_update:
+            raw = vals["gpm_input_block"]["gpm_input"]["value"]
+            new_gpm = int(raw) if raw.isdigit() else None
+
+        new_irrigation_acres = None
+        if "irr_acres" in to_update:
+            raw = vals["irr_input_block"]["irr_input"]["value"]
+            new_irrigation_acres = int(raw) if raw.isdigit() else None
+
+        # apply to each logger
+        results = []
+        for logger_name in loggers:
+            results.append(
+                update_gpm_irrigation_acres_for_logger(
+                    grower_name=grower.name,
+                    field_name=field_name,
+                    logger_name=logger_name,
+                    new_gpm=new_gpm,
+                    new_irrigation_acres=new_irrigation_acres
+                )
+            )
+
+        # send back all statuses and clear session
+        respond(text="\n".join(results))
+        SheetsHandler.log_request_to_sheet(
+            "Change GPM/Irr Acres",
+            body["user"]["name"],
+            f"{results}"
+        )
+        user_selections.pop(user_id, None)
+        return
+
+
+
 
 @app.action("attribute_select")
 def handle_attribute_select(ack, body, respond):
@@ -649,149 +751,6 @@ def get_selected_values(state, action_id):
             return [opt['value'] for opt in block[action_id]['selected_options']]
     return []
 
-def logger_delete_menu(logger_list, preselected=None):
-    # 1) Logger selector
-    options = generate_options(logger_list)
-    initial_opts = []
-    if preselected:
-        valid = {o["value"] for o in options}
-        initial_opts = [o for o in options if o["value"] in preselected and o["value"] in valid]
-
-    logger_block = {
-        "type": "section",
-        "block_id": "delete_logger_block",
-        "text": {"type": "mrkdwn", "text": "Choose logger(s) whose PSI to delete:"},
-        "accessory": {
-            "type": "multi_static_select",
-            "action_id": "logger_select_delete_psi",
-            "placeholder": {"type": "plain_text", "text": "Select logger(s)", "emoji": True},
-            "options": options,
-            **({"initial_options": initial_opts} if initial_opts else {})
-        }
-    }
-
-    # 2) Context/info
-    info_block = {
-        "type": "context",
-        "elements": [
-            {"type": "mrkdwn", "text": "*Optional:* specify a date range — leave both blank to wipe *all* PSI values."}
-        ]
-    }
-
-    # 3) Start‐date picker
-    start_date_block = {
-        "type": "input",
-        "block_id": "delete_start_date_block",
-        "optional": True,
-        "label": {"type": "plain_text", "text": "Start date", "emoji": True},
-        "element": {
-            "type": "datepicker",
-            "action_id": "delete_start_date",
-            "placeholder": {"type": "plain_text", "text": "Select a start date"}
-        }
-    }
-
-    # 4) End‐date picker
-    end_date_block = {
-        "type": "input",
-        "block_id": "delete_end_date_block",
-        "optional": True,
-        "label": {"type": "plain_text", "text": "End date", "emoji": True},
-        "element": {
-            "type": "datepicker",
-            "action_id": "delete_end_date",
-            "placeholder": {"type": "plain_text", "text": "Select an end date"}
-        }
-    }
-
-    # 5) Confirm button
-    confirm_block = {
-        "type": "actions",
-        "block_id": "delete_confirm_block",
-        "elements": [
-            {
-                "type": "button",
-                "action_id": "delete_confirm",
-                "style": "danger",
-                "text": {"type": "plain_text", "text": "Confirm Delete", "emoji": True},
-                "value": "confirm"
-            }
-        ]
-    }
-
-    return [
-        logger_block,
-        info_block,
-        start_date_block,
-        end_date_block,
-        confirm_block
-    ]
-
-
-
-def modify_value_selector_menu(respond, logger_list):
-    """Show menu for selecting attribute to modify."""
-    attributes = [
-        "logger_id", "date", "time", "canopy_temperature", "ambient_temperature", "vpd",
-        "vwc_1", "vwc_2", "vwc_3", "field_capacity", "wilting_point", "daily_gallons",
-        "daily_switch", "daily_hours", "daily_pressure", "daily_inches", "psi",
-        "psi_threshold", "psi_critical", "sdd", "rh", "eto", "kc", "etc", "et_hours"
-    ]
-
-    blocks = [
-        {
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": "Choose loggers to modify"},
-            "accessory": {
-                "type": "multi_static_select",
-                "action_id": "logger_select_modify_values",
-                "placeholder": {"type": "plain_text", "text": "Select loggers"},
-                "options": generate_options(logger_list)
-            }
-        },
-        {
-            "type": "input",
-            "block_id": "attribute_select_block",
-            "label": {"type": "plain_text", "text": "Select attribute to modify"},
-            "element": {
-                "type": "static_select",
-                "action_id": "attribute_select_modify",
-                "placeholder": {"type": "plain_text", "text": "Choose an attribute"},
-                "options": generate_options(attributes)
-            }
-        },
-        {
-            "type": "input",
-            "block_id": "value_input_block",
-            "label": {"type": "plain_text", "text": "New value"},
-            "element": {
-                "type": "plain_text_input",
-                "action_id": "value_input"
-            }
-        },
-        {
-            "type": "input",
-            "block_id": "date_picker_block",
-            "label": {"type": "plain_text", "text": "Pick date to apply this value"},
-            "element": {
-                "type": "datepicker",
-                "action_id": "modify_date_select"
-            }
-        },
-        {
-            "type": "actions",
-            "elements": [
-                {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "Confirm"},
-                    "style": "primary",
-                    "action_id": "modify_confirm",
-                    "value": "modify"
-                }
-            ]
-        }
-    ]
-    respond(blocks=blocks)
 
 @app.action("modify_confirm")
 def handle_modify_confirm(ack, body, respond):
@@ -827,437 +786,7 @@ def fix_ampersand(text):
     return text.replace('&amp;', '&')
 
 
-@app.action("grower_select_psi")
-@app.action("grower_select_change_soil")
-@app.action("grower_select_show")
-@app.action("grower_select_delete_psi")
-@app.action("grower_select_prev_day")
-@app.action("grower_select_billing")
-@app.action("grower_select_modify_values")
-def handle_grower_menu(ack, body, client, respond):
-    ack()
-
-    # Extract values from the actions
-    grower_action_id = body['callback_id']
-    selected_value = body['actions'][0]['selected_options'][0]['value']
-    # Ampersands come in weird through slack
-    selected_value = fix_ampersand(selected_value)
-    print(selected_value)
-    grower = SharedPickle.get_grower(selected_value)
-    field_list = [field.name for field in grower.fields]
-    username = body['user']['name']
-
-    # Add to selections
-    user_id = body['user']['id']
-    user_selections[user_id]['grower'] = grower
-
-    if grower_action_id == 'grower_select_psi':
-        action_id = 'field_select_psi'
-        field_list_menu(ack, respond, field_list, action_id)
-
-    elif grower_action_id == 'grower_select_change_soil':
-        action_id = 'field_select_change_soil'
-        field_list_menu(ack, respond, field_list, action_id)
-
-    elif grower_action_id == 'grower_select_delete_psi':
-        action_id = 'field_select_delete_psi'
-        field_list_menu(ack, respond, field_list, action_id)
-
-    elif grower_action_id == 'grower_select_prev_day':
-        action_id = 'field_select_prev_day'
-        field_list_menu(ack, respond, field_list, action_id)
-
-    elif grower_action_id == 'grower_select_modify_values':
-        action_id = 'field_select_modify_values'
-        field_list_menu(ack, respond, field_list, action_id)
-
-    # elif grower_action_id == 'grower_select_billing':
-    #     growers = SharedPickle.open_pickle()
-    #     result = SheetsHandler.billing_report_new_tab(growers)
-    #     link = 'https://docs.google.com/spreadsheets/d/137KpyvSKY_LCqiups4EAcwMQPYHV_a55bjwRQAMEX_k/edit?gid=0#gid=0'
-    #     if result:
-    #         respond(f'Added {grower.name} to the sheet\nView here: {link}')
-    #     elif not result:
-    #         respond(f'{grower.name} already in the sheet\nView here: {link}')
-    #
-    #     # Log the request to Google Sheets
-    #     request_name = 'Add Grower Billing'
-    #     info = grower.name
-    #     SheetsHandler.log_request_to_sheet(request_name, username, info)
-
-    elif grower_action_id == 'grower_select_show':
-
-        # SheetsHandler.log_request_to_sheet(request_name, username, info)
-
-        grower = SharedPickle.get_grower(selected_value)
-        pickle_contents = grower.to_string()
-
-        if len(pickle_contents) > 16000:
-            chunks = [pickle_contents[i:i + 16000] for i in range(0, len(pickle_contents), 16000)]
-            for chunk in chunks:
-                client.chat_postMessage(
-                    channel=body['channel']['id'],
-                    text=chunk,
-                    as_user=True
-                )
-        else:
-            client.chat_postMessage(
-                channel=body['channel']['id'],
-                text=pickle_contents,
-                as_user=True
-            )
-
-        # Log the request to Google Sheets
-        print('Showing pickle')
-        request_name = 'Show Pickle'
-        info = selected_value
-        SheetsHandler.log_request_to_sheet(request_name, username, info)
-
 # def handle_billing(ack, body, respond):
-
-def change_soil_menu(ack, respond, grower_names):
-    ack()
-    action_id = 'grower_select_change_soil'
-    response = {
-        "response_type": "in_channel",
-        "text": "Change Soil Type",
-        "attachments": [
-            grower_select_block(grower_names, action_id)
-        ]
-    }
-
-    respond(response)
-
-
-def field_list_menu(ack, respond, field_list, action_id):
-    ack()
-    
-    # Use Block Kit for all cases
-    blocks = [
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "Choose a field"
-            },
-            "accessory": {
-                "type": "static_select" if action_id not in ['field_select_psi', 'field_select_delete_psi'] else "multi_static_select",
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": "Select a field" if action_id not in ['field_select_psi', 'field_select_delete_psi'] else "Select field(s)",
-                    "emoji": True
-                },
-                "options": generate_options(field_list),
-                "action_id": action_id
-            }
-        }
-    ]
-    
-    respond(blocks=blocks)
-
-
-def logger_and_soil_list_menu(ack, respond, logger_list, soil_types):
-    ack()
-    logger_action_id = 'logger_select_change_soil'
-    blocks = [
-        logger_select_block(logger_list, logger_action_id),
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "Choose Soil Type"
-            },
-            "accessory": {
-                "type": "static_select",
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": "Select Soil Type",
-                    "emoji": True
-                },
-                "options": generate_options(soil_types),
-                "action_id": "soil_select"
-            }
-        }
-    ]
-
-    respond(blocks=blocks)
-
-def _button(text, action_id, value, style=None):
-    btn = {
-        "type": "button",
-        "text": {"type": "plain_text", "text": text},
-        "action_id": action_id,
-        "value": value
-    }
-    if style in ("primary", "danger"):
-        btn["style"] = style
-    return btn
-
-
-def logger_and_toggle_menu(logger_list, preselected=None, selected_state=None):
-    logger_block = logger_select_block(
-        logger_list,
-        action_id="logger_select_psi",
-        initial_selected=preselected
-    )
-
-    blocks = [
-        logger_block,
-        {
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": "Turn PSI On:"},
-            "accessory": _button(
-                text="PSI On",
-                action_id="psi_on",
-                value="on",
-                style="primary" if selected_state == "on" else None
-            )
-        },
-        {
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": "Turn PSI Off:"},
-            "accessory": _button(
-                text="PSI Off",
-                action_id="psi_off",
-                value="off",
-                style="danger" if selected_state == "off" else None
-            )
-        },
-        {
-            "type": "actions",
-            "elements": [
-                _button("Confirm", "psi_confirm", "confirm", style="primary")
-            ]
-        }
-    ]
-    return blocks
-
-
-
-def date_picker_block():
-    today = date.today().isoformat()  # e.g. "2025-07-02"
-    return [
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "Choose Start Date"
-            },
-            "accessory": {
-                "type": "datepicker",
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": "Select Start Date",
-                    "emoji": True
-                },
-                "action_id": "start_date_select",
-                "initial_date": today
-            }
-        },
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "Choose End Date (can be the same as Start Date)"
-            },
-            "accessory": {
-                "type": "datepicker",
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": "Select End Date",
-                    "emoji": True
-                },
-                "action_id": "end_date_select",
-                "initial_date": today
-            }
-        }
-    ]
-
-
-def vwc_select_block(action_id):
-    vwcs = ['VWC 1', 'VWC 2', 'VWC 3']
-    return {
-        "type": "section",
-        "text": {
-            "type": "mrkdwn",
-            "text": "Choose VWC depths to change"
-        },
-        "accessory": {
-            "type": "multi_static_select",
-            "placeholder": {
-                "type": "plain_text",
-                "text": "Select VWCs",
-                "emoji": True
-            },
-            "options": generate_options(vwcs),
-            "action_id": action_id
-        }
-    }
-
-
-def logger_and_dates_menu(ack, respond, logger_list):
-    print("logger_and_dates_menu function called")
-    ack()
-
-    # Define the logger block
-    logger_action_id = 'logger_select_prev_day'
-    logger_block = logger_select_block(logger_list, logger_action_id)
-    print(f"logger_block: {logger_block}")
-
-    # Define the vwc picker block
-    action_id = 'vwc_depth_select'
-    vwc_block = vwc_select_block(action_id)
-
-    # Define the date picker blocks
-    date_range_blocks = date_picker_block()
-
-    # Combine logger block and date picker blocks
-    blocks = [logger_block] + [vwc_block] + date_range_blocks
-
-    try:
-        respond(blocks=blocks)
-        print("Response sent successfully")
-
-    except Exception as e:
-        print(f"Error in respond function: {e}")
-
-
-def logger_select_block(logger_list, action_id, initial_selected=None):
-    # Generate the full list of options
-    options = generate_options(logger_list)
-
-    # Filter initial options to only include valid matches
-    initial_opts = []
-    if initial_selected:
-        valid_values = {opt['value'] for opt in options}
-        initial_opts = [
-            opt for opt in options if opt['value'] in initial_selected and opt['value'] in valid_values
-        ]
-
-    block = {
-        "type": "section",
-        "text": {
-            "type": "mrkdwn",
-            "text": "Choose logger(s) to change"
-        },
-        "accessory": {
-            "type": "multi_static_select",
-            "placeholder": {
-                "type": "plain_text",
-                "text": "Select logger(s)",
-                "emoji": True
-            },
-            "options": options,
-            "action_id": action_id
-        }
-    }
-
-    # Only include initial_options if non-empty and valid
-    if initial_opts:
-        block["accessory"]["initial_options"] = initial_opts
-
-    return block
-
-
-
-
-def main_menu(ack, respond, menu_options):
-    ack()
-
-    blocks = [
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "Menu"
-            },
-            "accessory": {
-                "type": "static_select",
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": "Choose an option",
-                    "emoji": True
-                },
-                "options": generate_options(menu_options),
-                "action_id": "menu_select"
-            }
-        }
-    ]
-
-    respond(blocks=blocks)
-
-
-def get_soil_menu(ack, respond):
-    ack()
-
-    blocks = [
-        {
-            "type": "input",
-            "block_id": "soil_input",
-            "element": {
-                "type": "plain_text_input",
-                "action_id": "soil_coordinates_input",
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": "Enter coordinates",
-                    "emoji": True
-                }
-            },
-            "label": {
-                "type": "plain_text",
-                "text": "Get Soil Type",
-                "emoji": True
-            }
-        },
-        {
-            "type": "actions",
-            "elements": [
-                {
-                    "type": "button",
-                    "text": {
-                        "type": "plain_text",
-                        "text": "Submit",
-                        "emoji": True
-                    },
-                    "value": "get_soil_type_coordinates",
-                    "action_id": "get_soil_type"
-                }
-            ]
-        }
-    ]
-
-    respond(
-        blocks=blocks,
-        text="Get Soil Type"
-    )
-
-
-def show_pickle_menu(ack, respond, grower_names):
-    ack()
-    action_id = 'grower_select_show'
-    response = {
-        "response_type": "in_channel",
-        "text": "Show Grower Info",
-        "attachments": [
-            grower_select_block(grower_names, action_id)
-        ]
-    }
-
-    respond(response)
-
-
-def use_prev_days_menu(ack, respond, grower_names):
-    ack()
-    action_id = 'grower_select_prev_day'
-    response = {
-        "response_type": "in_channel",
-        "text": "Use Previous Days VWC",
-        "attachments": [
-            grower_select_block(grower_names, action_id)
-        ]
-    }
-
-    respond(response)
 
 
 def add_billing_menu(ack, respond, body, growers):
@@ -1291,111 +820,6 @@ def add_billing_menu(ack, respond, body, growers):
     # respond(response)
 
 
-def grower_select_block(grower_names, action_id):
-    return {
-        "text": "Choose Grower",
-        "fallback": "You are unable to choose an option",
-        "color": "#3AA3E3",
-        "attachment_type": "default",
-        "callback_id": action_id,
-        "actions": [
-            {
-                "name": "grower_list",
-                "text": "Pick a grower...",
-                "type": "select",
-                "options": generate_options(grower_names)
-            }
-        ]
-    }
-
-def get_field_location_menu(ack, respond):
-    ack()
-    blocks = [
-        {
-            "type": "input",
-            "block_id": "field_location_input",
-            "element": {
-                "type": "plain_text_input",
-                "action_id": "submit_field_number",
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": "Enter MS field number (example: 1416)"
-                }
-            },
-            "label": {
-                "type": "plain_text",
-                "text": "Get Field Location"
-            }
-        },
-        {
-            "type": "actions",
-            "elements": [
-                {
-                    "type": "button",
-                    "text": {
-                        "type": "plain_text",
-                        "text": "Submit"
-                    },
-                    "value": "get_field_location",
-                    "action_id": "get_field_location"
-                }
-            ]
-        }
-    ]
-    respond(blocks=blocks)
-
-def get_coord_location_menu(ack, respond):
-    ack()
-    blocks = [
-        {
-            "type": "input",
-            "block_id": "field_coord_input",
-            "element": {
-                "type": "plain_text_input",
-                "action_id": "submit_field_coord",
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": "Enter coordinates like: 36.875752, -120.3441"
-                }
-            },
-            "label": {
-                "type": "plain_text",
-                "text": "Find Field by Coordinate"
-            }
-        },
-        {
-            "type": "actions",
-            "elements": [
-                {
-                    "type": "button",
-                    "text": {
-                        "type": "plain_text",
-                        "text": "Submit"
-                    },
-                    "value": "get_field_from_coord",
-                    "action_id": "get_field_from_coord"
-                }
-            ]
-        }
-    ]
-    respond(blocks=blocks)
-
-
-def turn_on_psi_menu(ack, respond, grower_names):
-    ack()
-    action_id = 'grower_select_psi'
-
-    response = {
-        "response_type": "in_channel",
-        "text": "Select PSI setting and Grower:",
-        "attachments": [
-            grower_select_block(grower_names, action_id)
-        ]
-    }
-
-    respond(response)
-
-
 # def toggle_psi(grower_name, field_names, logger_name, psi_toggle, growers):
 #     response_text = ''
 #     for grower in growers:
@@ -1412,38 +836,6 @@ def turn_on_psi_menu(ack, respond, grower_names):
 #                                 logger.ir_active = True
 #     SharedPickle.write_pickle(growers)
 #     return response_text
-def bulk_toggle_psi(
-    grower_name: str,
-    field_names: list[str] | str,
-    to_toggle: list[str],
-    on_or_off: str
-) -> list[str]:
-    """
-    Toggles IR (psi) for the given grower across all specified fields/loggers.
-    Opens the pickle once, applies all updates in-memory so to save us time, writes once,
-    and returns a list of status messages.
-    """
-    growers = SharedPickle.open_pickle()
-    messages: list[str] = []
-    # normalize fields to a list
-    fields = field_names if isinstance(field_names, (list, tuple)) else [field_names]
-
-    for g in growers:
-        if g.name != grower_name:
-            continue
-        for f in g.fields:
-            if f.name not in fields:
-                continue
-            for lg in f.loggers:
-                if lg.name not in to_toggle:
-                    continue
-                # flip the switch
-                lg.ir_active = (on_or_off == "on")
-                verb = "On" if on_or_off == "on" else "Off"
-                messages.append(f"Turned {verb} IR for {lg.name}")
-
-    SharedPickle.write_pickle(growers)
-    return messages
 
 
 def delete_psi_menu(ack, respond, grower_names):
@@ -1460,139 +852,6 @@ def delete_psi_menu(ack, respond, grower_names):
 
     respond(response)
 
-
-def change_logger_soil_type(logger_name: str, field_names: str, grower_name: str, new_soil_type: str):
-    """
-    Single function to change the soil type for a logger in both the pickle and the db
-
-    :param logger_name:
-    :param field_name:
-    :param grower_name:
-    :param new_soil_type:
-    """
-    print(f'Changing soil type for logger: {logger_name} to {new_soil_type}')
-
-    growers = SharedPickle.open_pickle()
-    dbw = DBWriter.DBWriter()
-    crop_type = None
-    old_soil_type = ''
-    # Change soil type in the pickle
-    print('-Changing soil type in the pickle')
-    for grower in growers:
-        if grower.name == grower_name:
-            for field in grower.fields:
-                if field.name in field_names:
-                    for logger in field.loggers:
-                        if logger.name == logger_name:
-                            print('\tFound logger...changing')
-                            old_soil_type = logger.soil.soil_type
-                            logger.soil.set_soil_type(new_soil_type)
-                            field_capacity = logger.soil.field_capacity
-                            wilting_point = logger.soil.wilting_point
-                            crop_type = logger.crop_type
-    SharedPickle.write_pickle(growers)
-    print('\tDone with pickle')
-
-    # Change soil type parameters in the DB
-    if crop_type:
-        print('-Changing soil type in the db')
-        field_name_db = dbw.remove_unwanted_chars_for_db_dataset(field_names[0])
-        db_project = dbw.get_db_project(crop_type)
-        dml = (f'UPDATE `{db_project}.{field_name_db}.{logger_name}` '
-               f'SET field_capacity = {field_capacity}, wilting_point = {wilting_point} '
-               f'WHERE TRUE')
-        result = dbw.run_dml(dml)
-        print(f'\tDone with DB')
-        print()
-        print(f'Soil type for {logger_name} changed from {old_soil_type} to {new_soil_type}')
-        print()
-
-    else:
-        print('Error: problem finding logger')
-    return old_soil_type
-
-def delete_psi_range(grower_name, field_name, logger_name, start_date, end_date):
-    dbw = DBWriter.DBWriter()
-    project = SharedPickle.get_project(field_name, grower_name)
-    ds = dbw.remove_unwanted_chars_for_db_dataset(field_name)
-    table = logger_name
-    # only null psi/sdd/temperature between your dates
-    dml = (
-      f"UPDATE `{project}.{ds}.{table}` "
-      f"SET psi=NULL, sdd=NULL, canopy_temperature=NULL "
-      f"WHERE date BETWEEN '{start_date}' AND '{end_date}'"
-    )
-    try:
-      dbw.run_dml(dml, project=project)
-      # also update in-memory pickle
-      for grower in SharedPickle.open_pickle():
-        if grower.name==grower_name:
-          for f in grower.fields:
-            if f.name==field_name:
-              for lg in f.loggers:
-                if lg.name==logger_name:
-                  # you could remove only those dates from lg.consecutive_ir_values,
-                  # but simplest is to clear entirely
-                  lg.ir_active=False
-                  lg.consecutive_ir_values.clear()
-      SharedPickle.write_pickle( SharedPickle.open_pickle() )
-      return f"[{start_date}→{end_date}] Cleared PSI for {logger_name} in {field_name}"
-    except Exception as e:
-      return f"Error clearing {logger_name} in {field_name}: {e}"
-
-def delete_psi_values_for_logger_and_range(
-    grower_name: str,
-    field_name:  str,
-    logger_name: str,
-    start_date:  str,
-    end_date:    str,
-    growers = None
-) -> str:
-    """
-    Null out psi, sdd and canopy_temperature for a single logger
-    between start_date and end_date (inclusive).
-
-    :param growers: Pickle
-    :param grower_name: name of the grower
-    :param field_name:   name of the field
-    :param logger_name:  name of the logger/table
-    :param start_date:   'YYYY-MM-DD'
-    :param end_date:     'YYYY-MM-DD'
-    :returns:            a status message
-    """
-    if growers is None:
-        growers = SharedPickle.open_pickle()
-    dbw     = DBWriter.DBWriter()
-    project = SharedPickle.get_project(field_name, grower_name)
-    f_name = dbw.remove_unwanted_chars_for_db_dataset(field_name)
-    table   = logger_name
-
-    dml = f"""
-      UPDATE `{project}.{f_name}.{table}`
-      SET psi = NULL, sdd = NULL, canopy_temperature = NULL
-      WHERE date BETWEEN '{start_date}' AND '{end_date}'
-    """
-
-    try:
-        dbw.run_dml(dml, project=project)
-
-        for g in growers:
-            if g.name != grower_name:
-                continue
-            for f in g.fields:
-                if f.name != field_name:
-                    continue
-                for lg in f.loggers:
-                    if lg.name == logger_name:
-                        lg.ir_active = False
-                        lg.consecutive_ir_values.clear()
-
-        SharedPickle.write_pickle(growers)
-
-        return f"Cleared PSI for {logger_name} in {field_name} from {start_date} to {end_date}"
-
-    except Exception as e:
-        return f"Error clearing PSI for {logger_name}: {e}"
 
 # Entry point for Google Cloud Functions
 @flask_app.route('/slack/events', methods=['POST'])
