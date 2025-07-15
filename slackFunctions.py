@@ -1,5 +1,7 @@
 import DBWriter
+# import GSheetCredentialSevice
 import SharedPickle
+import gSheetReader
 
 
 def change_logger_soil_type(logger_name: str, field_names: str, grower_name: str, new_soil_type: str):
@@ -212,22 +214,7 @@ def update_gpm_irrigation_acres_for_logger(
         growers = SharedPickle.open_pickle()
 
     dbw = DBWriter.DBWriter()
-    project = SharedPickle.get_project(field_name, grower_name, growers=growers)
-    field_dataset = dbw.remove_unwanted_chars_for_db_dataset(field_name)
 
-    # # build SET clause
-    # assigns = []
-    # if new_gpm is not None:
-    #     assigns.append(f"gpm = {new_gpm}")
-    # if new_irrigation_acres is not None:
-    #     assigns.append(f"irrigation_acres = {new_irrigation_acres}")
-    # set_clause = ", ".join(assigns)
-    #
-    # dml = (
-    #     f"UPDATE `{project}.{field_dataset}.{logger_name}` "
-    #     f"SET {set_clause} "
-    #     "WHERE TRUE"
-    # )
 
     try:
         # dbw.run_dml(dml, project=project)
@@ -254,3 +241,91 @@ def update_gpm_irrigation_acres_for_logger(
         return f"Updated {', '.join(parts)} for {logger_name} in {field_name}"
     except Exception as e:
         return f"Error updating {logger_name}: {e}"
+
+def uninstall_field(fields, pickle = SharedPickle.open_pickle()):
+    grower_pickle = pickle
+    cleaned_split_field_names = fields
+    dbw = DBWriter.DBWriter()
+    YEAR = '2025'
+    fields_uninstalled_list = []
+    sheet_id = '1RUo7w9mOfzGCncDNIgUC_xvI3DrodITEyamcjottIL8'
+    g_sheets_tab_name = "Uninstall"
+
+    # g_sheet_credential = GSheetCredentialSevice.GSheetCredentialSevice()
+    # service = g_sheet_credential.getService()
+    #
+    # result = gSheetReader.getServiceRead(g_sheets_tab_name, sheet_id, service)
+    # g_sheet_row_results = result['valueRanges'][0]['values']
+
+    # Assign indexes to columns
+    # field_name_header = gSheetReader.getColumnHeader("Fields Uninstalled", g_sheet_row_results)
+    # uninstall_done_header = gSheetReader.getColumnHeader("Uninstall Done", g_sheet_row_results)
+
+    num_of_fields_to_uninstall = 0
+    field_row_iterator = 0
+    try:
+        successful_uninstall = True
+        for grower in grower_pickle:
+            for field in grower.fields:
+                if field.name in cleaned_split_field_names:
+                    print("\tUninstalling ", field.name)
+                    crop_type = field.loggers[-1].crop_type
+                    project = dbw.get_db_project(crop_type)
+                    grower_name_db = dbw.remove_unwanted_chars_for_db_dataset(field.grower.name)
+                    field_name_db = dbw.remove_unwanted_chars_for_db_dataset(field.name)
+
+                    # Get uninstallation Date using last date of database
+                    print(f"\t\tGrabbing last data date for uninstall date")
+                    table_id = f"`{project}.{field_name_db}.{field.loggers[-1].name}`"
+                    select_uninstall_date_query = f"select t.date from {table_id} as t order by t.date DESC limit 1"
+                    result_uninstall_date_query = dbw.run_dml(select_uninstall_date_query)
+                    field_uninstallation_date = None
+                    for row in result_uninstall_date_query:
+                        field_uninstallation_date = row.date
+                    print(
+                        f"\t\t\t{field.name}:{field.loggers[-1].name} Last Data Date:{field_uninstallation_date}")
+                    if not field_uninstallation_date:
+                        print(f"\t\t\tNo data for field to get uninstall date for")
+                        continue
+
+                    print(f"\t\tSetting field to uninstalled in portal")
+                    project = f'growers-{YEAR}'
+                    uninstall_dml_field_averages = (
+                        f'UPDATE `{project}.{grower_name_db}.field_averages` as t '
+                        f'SET t.order = -999, t.soil_moisture_num = null, '
+                        f't.soil_moisture_desc = "Uninstalled", t.si_num = null, '
+                        f't.si_desc = "Uninstalled" WHERE t.field = "{field.nickname}"'
+                    )
+                    dbw.run_dml(uninstall_dml_field_averages)
+                    print(f'\t\t\tField Averages Table Done')
+
+                    uninstall_dml_loggers = (
+                        f'UPDATE `{project}.{grower_name_db}.loggers` as t '
+                        f'SET t.order = -999, t.soil_moisture_num = null, '
+                        f't.soil_moisture_desc = "Uninstalled", t.si_num = null, '
+                        f't.si_desc = "Uninstalled" WHERE t.field = "{field.nickname}"'
+                    )
+                    dbw.run_dml(uninstall_dml_loggers)
+                    print(f'\t\t\tLoggers Table Done')
+
+                    for logger in field.loggers:
+                        logger.uninstall_date = field_uninstallation_date
+
+                    field.deactivate()
+                    fields_uninstalled_list.append(field.name)
+                    print("\t<- Uninstall Done ", field.name)
+    except Exception as err:
+        print(f'ERROR {err}')
+        successful_uninstall = False
+
+    if successful_uninstall:
+        # target_cell = f'{g_sheets_tab_name}!D{field_row_iterator + 1}'
+        # field_row_iterator += 1
+        # # print(target_cell)
+        # gSheetReader.write_target_cell(target_cell, True, sheet_id, service)
+        print(f"\tFields Uninstalled Successfully - {fields_uninstalled_list}")
+
+    SharedPickle.write_pickle(grower_pickle)
+    print("Removed the following Fields: ", fields_uninstalled_list)
+    print(f"{len(fields_uninstalled_list)} / {num_of_fields_to_uninstall} removed")
+    return fields_uninstalled_list

@@ -716,3 +716,13 @@ def run_field_menu(ack, respond, grower_names):
             grower_select_block(grower_names, action_id)
         ]
     })
+def uninstall_field_menu(ack, respond, grower_names):
+    ack()
+    action_id = 'grower_select_uninstall_field'
+    respond({
+        "response_type": "in_channel",
+        "text": "Uninstall Field",
+        "attachments": [
+            grower_select_block(grower_names, action_id)
+        ]
+    })
