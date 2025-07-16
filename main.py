@@ -15,7 +15,8 @@ import slackFunctions
 from blocks import field_list_menu, logger_and_soil_list_menu, logger_and_toggle_menu, logger_and_dates_menu, \
     logger_select_block, main_menu, get_soil_menu, show_pickle_menu, use_prev_days_menu, grower_select_block, \
     get_field_location_menu, get_coord_location_menu, turn_on_psi_menu, change_soil_menu, logger_delete_menu, \
-    modify_value_selector_menu, change_gpm_menu, logger_and_gpm_menu, run_field_menu, uninstall_field_menu
+    modify_value_selector_menu, change_gpm_menu, logger_and_gpm_menu, run_field_menu, uninstall_field_menu, \
+    uninstall_button_menu
 from slackFunctions import change_logger_soil_type, delete_psi_values_for_logger_and_range, bulk_toggle_psi, \
     delete_psi_values_for_specific_logger, update_gpm_irrigation_acres_for_logger
 
@@ -46,15 +47,15 @@ def main_menu_command(ack, body, respond):
         # Javi 'U4KFKMH8C'
         if body['user_id'] in ['U4KFKMH8C']:
             menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Show Pickle', 'Use Previous Days VWC', 'Add Grower Billing', 'Get Field Location',
-                            'Change GPM / Irr Acres', 'Uninstall Field']
+                            'Change GPM / Irr Acres', 'Uninstall Fields']
 
         # just Ollie  U06NJRAT1T2
         elif body['user_id'] in ['U06NJRAT1T2']:
             menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Delete PSI values', 'Show Pickle', 'Use Previous Days VWC',
-                            'Modify Values', 'Add Grower Billing', 'Get Field Location', 'Change GPM / Irr Acres', 'Run Field', 'Uninstall Field']
+                            'Modify Values', 'Add Grower Billing', 'Get Field Location', 'Change GPM / Irr Acres', 'Run Field', 'Uninstall Fields']
         else:
             menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Delete PSI values', 'Show Pickle', 'Add Grower Billing', 'Get Field Location',
-                            'Change GPM / Irr Acres', 'Uninstall Field']
+                            'Change GPM / Irr Acres', 'Uninstall Fields']
         main_menu(ack, respond, menu_options)
     except Exception as e:
         print(f"Error: {e}")
@@ -91,7 +92,7 @@ def handle_main_menu(ack, body, respond):
         change_gpm_menu(ack,respond,grower_names)
     elif menu_option == 'Run Field':
         run_field_menu(ack, respond, grower_names)
-    elif menu_option == 'Uninstall Field':
+    elif menu_option == 'Uninstall Fields':
         uninstall_field_menu(ack, respond, grower_names)
 
 
@@ -151,13 +152,11 @@ def handle_grower_menu(ack, body, client, respond):
             field_list_menu(ack, respond, field_list, action_id)
             return
     elif grower_action_id == 'grower_select_uninstall_field':
-            field_list = [field.name for field in grower.fields if field.active]
-            if not field_list:
-                respond(f"Error no active fields in this grower {grower.name}")
-                return
-            action_id = 'field_select_uninstall_field'
-            field_list_menu(ack, respond, field_list, action_id)
-            return
+        all_fields = [f.name for f in grower.fields]
+        active_fields = [f.name for f in grower.fields if f.active]
+        action_id = 'field_select_uninstall_field'
+        field_list_menu(ack, respond, field_list=all_fields, action_id=action_id, active_fields=active_fields)
+        return
     elif grower_action_id == 'grower_select_show':
 
         # SheetsHandler.log_request_to_sheet(request_name, username, info)
@@ -426,7 +425,7 @@ def handle_prev_day_selections(ack, body, respond):
 @app.action("field_select_modify_values")
 @app.action("field_select_gpm")
 @app.action("field_select_run_field")
-@app.action("field_select_uninstall_field")
+# @app.action("field_select_uninstall_field")
 def handle_field_select(ack, body, respond):
     ack()
     print('Handling Field Select')
@@ -508,17 +507,64 @@ def handle_field_select(ack, body, respond):
         user_selections.pop(user_id, None)
         return
 
-    elif action_id == 'field_select_uninstall_field':
-        # Save the selected field
-        user_selections[user_id]['fields'] = field_names
-        uninstalled = slackFunctions.uninstall_field(field_names)
-        respond(text="Uninstalled: \n".join(uninstalled))
-        SheetsHandler.log_request_to_sheet(
-            "Uninstalled Fields",
-            body["user"]["name"],
-            f"{uninstalled}"
+@app.action("field_select_uninstall_field")
+def handle_field_select_uninstall(ack, body, respond):
+    ack()
+    user_id = body["user"]["id"]
+    action  = body["actions"][0]
+    selected = [opt["value"] for opt in action["selected_options"]]
+
+    # Determine active/inactive for this grower
+    grower = user_selections[user_id]["grower"]
+    all_fields    = [f.name for f in grower.fields]
+    active_fields = [f.name for f in grower.fields if f.active]
+
+    # If they picked any inactive, error + re‑show menu
+    invalid = [f for f in selected if f not in active_fields]
+    if invalid:
+        # a) error text
+        err_text = (
+                "⚠️ You can’t uninstall these inactive fields:\n"
+                + "\n".join(f"• {f}" for f in invalid)
         )
-        user_selections.pop(user_id, None)
+        # b) show the summary + back/confirm buttons (using accumulated fields, unchanged)
+        acc = user_selections[user_id].get("fields_accumulated", [])
+        summary = "\n".join(f"• {f}" for f in acc) or "(no fields yet)"
+        blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": err_text}}] + uninstall_button_menu(ack, respond, summary)
+        return respond(blocks=blocks)
+    # 4) Accumulate only the valid picks
+    user_selections[user_id].setdefault("fields_accumulated", []).extend(selected)
+    acc = user_selections[user_id]["fields_accumulated"]
+    # dedupe in-place
+    acc[:] = list(dict.fromkeys(acc))
+
+    # 5) Show summary + back/confirm buttons
+    picked_md = "\n".join(f"• {f}" for f in acc)
+    blocks = uninstall_button_menu(ack, respond, picked_md)
+    respond(blocks=blocks)
+    return None
+
+
+@app.action("uninstall_add_grower")
+def handle_uninstall_add_grower(ack, body, respond):
+    ack()
+    user_id = body["user"]["id"]
+    # drop only the last grower/fields so they can pick a new grower
+    user_selections[user_id].pop("grower", None)
+    user_selections[user_id].pop("fields",  None)
+    # re‑prompt grower (your existing uninstall_field_menu will work)
+    uninstall_field_menu(ack, respond, [g.name for g in SharedPickle.open_pickle()])
+
+@app.action("uninstall_finish")
+def handle_uninstall_finish(ack, body, respond):
+    ack()
+    user_id = body["user"]["id"]
+    fields = user_selections[user_id].get("fields_accumulated", [])
+    if not fields:
+        return respond("⚠️ No fields selected to uninstall.")
+    results = slackFunctions.uninstall_fields(fields)
+    respond(text="✅ Uninstalled:\n" + "\n".join(results))
+    user_selections.pop(user_id, None)
 
 @app.action("logger_select_gpm")
 @app.action("update_fields_select")

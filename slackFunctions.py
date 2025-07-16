@@ -242,7 +242,9 @@ def update_gpm_irrigation_acres_for_logger(
     except Exception as e:
         return f"Error updating {logger_name}: {e}"
 
-def uninstall_field(fields, pickle = SharedPickle.open_pickle()):
+def uninstall_fields(fields, pickle = SharedPickle.open_pickle()):
+    # print(fields)
+    # return fields
     grower_pickle = pickle
     cleaned_split_field_names = fields
     dbw = DBWriter.DBWriter()

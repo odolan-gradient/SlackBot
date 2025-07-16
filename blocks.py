@@ -11,6 +11,24 @@ def generate_options(list_of_items):
             "value": item
         } for item in list_of_items
     ]
+def generate_field_options(field_list, active_fields):
+    options = []
+    for f in field_list:
+        if f in active_fields:
+            # normal option
+            text_obj = {"type": "plain_text", "text": f, "emoji": True}
+        else:
+            # strikethrough + “(inactive)” hint
+            text_obj = {
+                "type": "plain_text",
+                "text": f"{f} (inactive)",
+                "emoji": True
+            }
+        options.append({
+            "text": text_obj,
+            "value": f
+        })
+    return options
 
 def change_gpm_menu(ack, respond, grower_names):
     ack()
@@ -24,31 +42,50 @@ def change_gpm_menu(ack, respond, grower_names):
     })
 
 
-def field_list_menu(ack, respond, field_list, action_id):
+def field_list_menu(ack, respond, field_list, action_id, active_fields=None, preselected=None):
     ack()
-    
-    # Use Block Kit for all cases
+    # Which actions should be multi‑select?
+    multi = ['field_select_psi', 'field_select_delete_psi', 'field_select_uninstall_field']
+    is_multi = action_id in multi
+    is_uninstall = (action_id == 'field_select_uninstall_field')
+
+    # Build options: either normal or strikethrough for inactive
+    if is_uninstall and active_fields is not None:
+        options = generate_field_options(field_list, active_fields)
+    else:
+        options = generate_options(field_list)
+
+    # Figure out which to pre‑select
+    initial_opts = []
+    if preselected:
+        valid_values = {o['value'] for o in options}
+        initial_opts = [
+            o for o in options
+            if o['value'] in preselected and o['value'] in valid_values
+        ]
+
+    accessory = {
+        "type":       "multi_static_select" if is_multi else "static_select",
+        "action_id":  action_id,
+        "placeholder":{
+            "type":"plain_text",
+            "text": "Select field(s)" if is_multi else "Select a field",
+            "emoji": True
+        },
+        "options": options,
+        **({"initial_options": initial_opts} if initial_opts else {})
+    }
+
     blocks = [
         {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "Choose a field"
-            },
-            "accessory": {
-                "type": "static_select" if action_id not in ['field_select_psi', 'field_select_delete_psi'] else "multi_static_select",
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": "Select a field" if action_id not in ['field_select_psi', 'field_select_delete_psi'] else "Select field(s)",
-                    "emoji": True
-                },
-                "options": generate_options(field_list),
-                "action_id": action_id
-            }
+            "type":"section",
+            "text":{"type":"mrkdwn","text": "Choose field(s)" if is_multi else "Choose a field"},
+            "accessory": accessory
         }
     ]
-    
+
     respond(blocks=blocks)
+
 
 
 def logger_and_soil_list_menu(ack, respond, logger_list, soil_types):
@@ -726,3 +763,33 @@ def uninstall_field_menu(ack, respond, grower_names):
             grower_select_block(grower_names, action_id)
         ]
     })
+
+def uninstall_button_menu(ack, respond, picked_md):
+    # now re‑render two buttons: Back to grower or Confirm uninstall
+    return [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Fields selected so far:*\n{picked_md}"
+            }
+        },
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "← Another Grower"},
+                    "action_id": "uninstall_add_grower",
+                    "value": "back"
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "Confirm Uninstall"},
+                    "style": "danger",
+                    "action_id": "uninstall_finish",
+                    "value": "finish"
+                }
+            ]
+        }
+    ]
