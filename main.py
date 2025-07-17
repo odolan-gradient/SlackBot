@@ -364,57 +364,88 @@ def handle_toggle_psi(ack, body, respond):
         user_selections.pop(user_id, None)
 
 
-
 @app.action("logger_select_prev_day")
 @app.action("start_date_select")
 @app.action("end_date_select")
 @app.action("vwc_depth_select")
+@app.action("single_date_picker")
+@app.action("confirm_dates")
 def handle_prev_day_selections(ack, body, respond):
     ack()
-    user_id = body['user']['id']
-    action_id = body['actions'][0]['action_id']
+    user_id   = body["user"]["id"]
+    action_id = body["actions"][0]["action_id"]
+    # ensure we have a bucket for this user
+    user_selections.setdefault(user_id, {})
 
-    # Instantiate the user selections
-    if action_id == 'logger_select_prev_day':  # Logger select
-        selected_options = body['actions'][0]['selected_options']
-        user_selections[user_id][action_id] = [option['value'] for option in selected_options]
-    elif action_id in ['start_date_select', 'end_date_select']:
-        selected_date = body['actions'][0]['selected_date']
-        user_selections[user_id][action_id] = selected_date
-    elif action_id in ['vwc_depth_select']:
-        selected_vwc = body['actions'][0]['selected_options']
-        user_selections[user_id][action_id] = [option['value'] for option in selected_vwc]
+    # 1) collect each selection
+    if action_id == "logger_select_prev_day":
+        opts = body["actions"][0]["selected_options"]
+        user_selections[user_id][action_id] = [o["value"] for o in opts]
 
-    # Check if all selections are complete
-    if 'logger_select_prev_day' in user_selections[user_id] and 'start_date_select' in user_selections[
-        user_id] and 'end_date_select' in user_selections[user_id] and 'vwc_depth_select' in user_selections[user_id]:
-        loggers = user_selections[user_id]['logger_select_prev_day']
-        start_date = user_selections[user_id]['start_date_select']
-        end_date = user_selections[user_id]['end_date_select']
-        # field = user_selections[user_id]['fields']
-        field = user_selections[user_id]['fields'][0]
-        grower = user_selections[user_id]['grower']
-        grower_name = grower.name
-        project = SharedPickle.get_project(field, grower_name)
-        vwcs = user_selections[user_id]['vwc_depth_select']
+    elif action_id in ("start_date_select", "end_date_select"):
+        user_selections[user_id][action_id] = body["actions"][0]["selected_date"]
 
-        for logger in loggers:
-            SQLScripts.update_vwc_for_date_range(project, field, logger, start_date, end_date, vwcs)
-        response_text = f"Using previous day VWC for the following:\nLoggers: {', '.join(loggers)} at {vwcs}"
-        respond(text=response_text)
+    elif action_id == "vwc_depth_select":
+        opts = body["actions"][0]["selected_options"]
+        user_selections[user_id][action_id] = [o["value"] for o in opts]
 
-        # Log the request to Google Sheets
-        request_name = 'Use Previous Days VWC'
-        info = ', '.join(loggers) + ', ' + ', '.join(map(str, vwcs))
-        username = body['user']['name']
-        SheetsHandler.log_request_to_sheet(request_name, username, info)
+    elif action_id == "single_date_picker":
+        # store the one‑off override day
+        user_selections[user_id]["optional_day"] = body["actions"][0]["selected_date"]
 
-        # Clear the selections for this user
-        del user_selections[user_id]
+    # 2) if this wasn’t the Confirm button, bail out now
+    if action_id != "confirm_dates":
+        return
 
-    else:
-        # If both selections aren't complete, don't respond yet
-        pass
+    # 3) Confirm was clicked → gather everything
+    sel = user_selections[user_id]
+    loggers      = sel.get("logger_select_prev_day", [])
+    vwcs         = sel.get("vwc_depth_select", [])
+    start_date   = sel.get("start_date_select")
+    end_date     = sel.get("end_date_select")
+    optional_day = sel.get("optional_day")  # may be None
+
+    # simple validation
+    if not loggers or not vwcs or not start_date or not end_date:
+        respond(text="❗️ Please pick loggers, VWCs, and dates before confirming.")
+        return
+
+    # fetch project & metadata
+    fields    = sel["fields"]
+    field = fields[0]
+    grower   = sel["grower"]
+    project  = SharedPickle.get_project(field, grower.name)
+    username = body["user"]["name"]
+
+    # log to Sheets
+    info = f"{','.join(loggers)} @ {vwcs}"
+    SheetsHandler.log_request_to_sheet("Use Previous Days VWC", username, info)
+
+    # run the SQL updates
+    for lg in loggers:
+        SQLScripts.update_vwc_for_date_range(
+            project,
+            field,
+            lg,
+            start_date,
+            end_date,
+            vwcs,
+            optional_day=optional_day  # pass it along if your function supports it
+        )
+
+    # final acknowledgement
+    msg = (
+        f"✔️ Applied VWCs {vwcs} for loggers {', '.join(loggers)} "
+        f"from {start_date} to {end_date}"
+    )
+    if optional_day:
+        msg += f"  (using {optional_day})"
+
+    respond(text=msg)
+
+    # clean up
+    del user_selections[user_id]
+
 
 
 @app.action("field_select_change_soil")
@@ -460,7 +491,7 @@ def handle_field_select(ack, body, respond):
 
     # Route based on action
     if action_id == 'field_select_change_soil':
-        print('\t Field Select Change Soil')
+        print('\tField Select Change Soil')
         soil_types = [
             'Sand (10-5)', 'Loamy Sand (12-5)', 'Sandy Loam (18-8)', 'Sandy Clay Loam (27-17)',
             'Loam (28-14)', 'Sandy Clay (36-25)', 'Silt Loam (31-11)', 'Silt (30-6)',
@@ -469,19 +500,19 @@ def handle_field_select(ack, body, respond):
         logger_and_soil_list_menu(ack, respond, logger_list, soil_types)
 
     elif action_id == 'field_select_psi':
-        print('\t Field Select PSI')
+        print('\tField Select PSI')
         user_selections[user_id]['logger_select_psi'] = logger_list
         blocks = logger_and_toggle_menu(logger_list, preselected=logger_list)
         respond(blocks=blocks)
 
     elif action_id == 'field_select_delete_psi':
-        print('\t Field Delete PSI')
+        print('\tField Delete PSI')
         user_selections[user_id]['logger_select_delete_psi'] = logger_list
         blocks = logger_delete_menu(logger_list, preselected=logger_list)
         respond(blocks=blocks)
 
     elif action_id == 'field_select_prev_day':
-        print('\t Field Prev Day')
+        print('\tField Prev Day')
         logger_and_dates_menu(ack, respond, logger_list)
 
     elif action_id == 'field_select_modify_values':
@@ -564,6 +595,11 @@ def handle_uninstall_finish(ack, body, respond):
         return respond("⚠️ No fields selected to uninstall.")
     results = slackFunctions.uninstall_fields(fields)
     respond(text="✅ Uninstalled:\n" + "\n".join(results))
+    SheetsHandler.log_request_to_sheet(
+        "Uninstall Fields",
+        body["user"]["name"],
+        f"{results}"
+    )
     user_selections.pop(user_id, None)
 
 @app.action("logger_select_gpm")
@@ -670,74 +706,6 @@ def handle_attribute_select(ack, body, respond):
     ]
     respond(blocks=blocks)
 
-@app.action("submit_value")
-def handle_submit_value(ack, body, respond):
-    ack()
-    selected_attribute = body['actions'][0]['value']
-    new_value = body['state']['values']['value_input']['value']
-    user_id = body['user']['id']
-    
-    # Get the selected logger and date range from user selections
-    logger_name = user_selections[user_id]['logger_select_modify_values']
-    start_date = user_selections[user_id]['start_date']
-    end_date = user_selections[user_id]['end_date']
-    
-    # TODO: Add code to update the value in the database
-    # This will require creating a new function in SQLScripts.py
-    
-    response_text = f"Updating {selected_attribute} to {new_value} for logger {logger_name} from {start_date} to {end_date}"
-    respond(text=response_text)
-    
-    # Clear the selections for this user
-    del user_selections[user_id]
-
-    # Extract values from the actions
-    action_data = body['actions'][0]
-    action_id = action_data.get('action_id', action_data.get('name'))
-    callback_id = action_id
-    selected_value = action_data['selected_options'][0]['value']
-    fields_selected = [fix_ampersand(selected_value)]
-    user_id = body['user']['id']
-    user_selections[user_id]['fields'] = fields_selected
-    # Extract values from the actions
-    action_data = body['actions'][0]
-    action_id = action_data.get('action_id', action_data.get('name'))
-    callback_id = action_id
-    selected_value = action_data['selected_options'][0]['value']
-    fields_selected = [fix_ampersand(selected_value)]
-    user_id = body['user']['id']
-    user_selections[user_id]['fields'] = fields_selected
-
-    # Build combined logger list from all selected fields
-    logger_list = []
-    for fname in fields_selected:
-        field_obj = SharedPickle.get_field(fname)
-        logger_list.extend([logger.name for logger in field_obj.loggers])
-    logger_list = list(dict.fromkeys(logger_list))  # unique while preserving order
-    if callback_id == 'field_select_change_soil':
-        soil_types = ['Sand (10-5)', 'Loamy Sand (12-5)', 'Sandy Loam (18-8)', 'Sandy Clay Loam (27-17)',
-                      'Loam (28-14)', 'Sandy Clay (36-25)', 'Silt Loam (31-11)', 'Silt (30-6)',
-                      'Clay Loam (36-22)', 'Silty Clay Loam (38-22)', 'Silty Clay (41-27)', 'Clay (42-30)']
-        logger_and_soil_list_menu(ack, respond, logger_list, soil_types)
-
-    if callback_id == 'field_select_psi':
-        user_selections[user_id]['logger_select_psi'] = logger_list
-        blocks = logger_and_toggle_menu(logger_list, preselected=logger_list)
-        respond(blocks=blocks)
-        # logger_and_toggle_menu(ack, respond, logger_list)
-    elif callback_id == 'field_select_delete_psi':
-        # store full logger list
-        user_selections[user_id]['logger_select_delete_psi'] = logger_list
-        blocks = logger_delete_menu(logger_list, preselected=logger_list)
-        respond(blocks=blocks)
-
-
-    elif callback_id == 'field_select_prev_day':
-        logger_and_dates_menu(ack, respond, logger_list)
-
-    elif callback_id == 'field_select_modify_values':
-        modify_value_selector_menu(respond, logger_list)
-
 @app.action("logger_select_delete_psi")
 @app.action("delete_start_date")
 @app.action("delete_end_date")
@@ -757,10 +725,10 @@ def handle_delete_psi(ack, body, respond):
     # picked dates (optional)
     if action_id == "delete_start_date":
         user_selections[user_id]["delete_start_date"] = body["actions"][0]["selected_date"]
-        return
+        return None
     if action_id == "delete_end_date":
         user_selections[user_id]["delete_end_date"] = body["actions"][0]["selected_date"]
-        return
+        return None
 
     # confirmed delete
     if action_id == "delete_confirm":
@@ -808,6 +776,8 @@ def handle_delete_psi(ack, body, respond):
             f"{fields} → {list(to_delete)} ({start} to {end})"
         )
         user_selections.pop(user_id, None)
+        return None
+    return None
 
 
 def get_selected_value(state, block_id, action_id):

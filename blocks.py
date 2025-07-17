@@ -30,6 +30,27 @@ def generate_field_options(field_list, active_fields):
         })
     return options
 
+def make_confirm_block(action_id: str, button_text: str = "Confirm") -> dict:
+    """
+    Returns a Slack “Confirm” button wrapped in an `actions` block.
+    You can pass in any action_id you like.
+    """
+    return {
+        "type": "actions",
+        "block_id": f"{action_id}_block",
+        "elements": [
+            {
+                "type": "button",
+                "action_id": action_id,
+                "text": {
+                    "type": "plain_text",
+                    "text": button_text
+                },
+                "style": "primary"
+            }
+        ]
+    }
+
 def change_gpm_menu(ack, respond, grower_names):
     ack()
     action_id = 'grower_select_gpm'
@@ -65,7 +86,7 @@ def field_list_menu(ack, respond, field_list, action_id, active_fields=None, pre
         ]
 
     accessory = {
-        "type":       "multi_static_select" if is_multi else "static_select",
+        "type": "multi_static_select" if is_multi else "static_select",
         "action_id":  action_id,
         "placeholder":{
             "type":"plain_text",
@@ -166,7 +187,7 @@ def logger_and_toggle_menu(logger_list, preselected=None, selected_state=None):
     return blocks
 
 
-def date_picker_block():
+def two_date_picker_block():
     today = date.today().isoformat()  # e.g. "2025-07-02"
     return [
         {
@@ -227,31 +248,86 @@ def vwc_select_block(action_id):
     }
 
 
+# def logger_and_dates_menu(ack, respond, logger_list):
+#     print("logger_and_dates_menu function called")
+#     ack()
+#
+#     # Define the logger block
+#     logger_action_id = 'logger_select_prev_day'
+#     logger_block = logger_select_block(logger_list, logger_action_id)
+#     print(f"logger_block: {logger_block}")
+#
+#     # Define the vwc picker block
+#     action_id = 'vwc_depth_select'
+#     vwc_block = vwc_select_block(action_id)
+#
+#     # Define the date picker blocks
+#     date_range_blocks = two_date_picker_block()
+#     optional_day_block = {
+#         "type": "input",
+#         "block_id": "use_different_day",
+#         "optional": True,   # makes this field optional
+#         "label": {
+#             "type": "plain_text",
+#             "text": "Use a different day"
+#         },
+#         "element": {
+#             "type": "datepicker",
+#             "action_id": "single_date_picker",
+#             "initial_date": date.today().isoformat(),
+#             "placeholder": {
+#                 "type": "plain_text",
+#                 "text": "Select a date"
+#             }
+#         }
+#     }
+#     # Combine logger block and date picker blocks
+#     blocks = [logger_block] + [vwc_block] + date_range_blocks
+#
+#     try:
+#         respond(blocks=blocks)
+#         print("Response sent successfully")
+#
+#     except Exception as e:
+#         print(f"Error in respond function: {e}")
+
 def logger_and_dates_menu(ack, respond, logger_list):
-    print("logger_and_dates_menu function called")
     ack()
 
-    # Define the logger block
-    logger_action_id = 'logger_select_prev_day'
-    logger_block = logger_select_block(logger_list, logger_action_id)
-    print(f"logger_block: {logger_block}")
+    # … your existing blocks …
+    logger_block      = logger_select_block(logger_list, 'logger_select_prev_day')
+    vwc_block         = vwc_select_block('vwc_depth_select')
+    date_range_blocks = two_date_picker_block()
 
-    # Define the vwc picker block
-    action_id = 'vwc_depth_select'
-    vwc_block = vwc_select_block(action_id)
+    # optional single‑day picker:
+    optional_day_block = {
+        "type": "input",
+        "block_id": "use_different_day",
+        "optional": True,
+        "label": {"type": "plain_text", "text": "Use a different day"},
+        "element": {
+            "type": "datepicker",
+            "action_id": "single_date_picker",
+            "initial_date": date.today().isoformat(),
+            "placeholder": {
+                "type": "plain_text",
+                "text": "Select a date"
+            }
+        }
+    }
 
-    # Define the date picker blocks
-    date_range_blocks = date_picker_block()
+    # build your confirm block via the helper
+    confirm_block = make_confirm_block("confirm_dates", "Confirm")
 
-    # Combine logger block and date picker blocks
-    blocks = [logger_block] + [vwc_block] + date_range_blocks
+    blocks = [
+        logger_block,
+        vwc_block,
+        *date_range_blocks,
+        optional_day_block,
+        confirm_block
+    ]
 
-    try:
-        respond(blocks=blocks)
-        print("Response sent successfully")
-
-    except Exception as e:
-        print(f"Error in respond function: {e}")
+    respond(blocks=blocks)
 
 def logger_and_gpm_menu(ack, respond, logger_list, preselected=None):
     ack()
@@ -321,18 +397,7 @@ def logger_and_gpm_menu(ack, respond, logger_list, preselected=None):
     }
 
     # 5) confirm button
-    confirm_block = {
-        "type": "actions",
-        "elements": [
-            {
-                "type": "button",
-                "text": {"type": "plain_text", "text": "Confirm"},
-                "style": "primary",
-                "action_id": "confirm_gpm_update",
-                "value": "confirm"
-            }
-        ]
-    }
+    confirm_block = make_confirm_block("confirm_gpm_update", "Confirm")
 
     respond(blocks=[
         logger_block,
@@ -341,6 +406,9 @@ def logger_and_gpm_menu(ack, respond, logger_list, preselected=None):
         irr_block,
         confirm_block
     ])
+
+
+
 
 
 def logger_select_block(logger_list, action_id, initial_selected=None):

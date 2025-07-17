@@ -1952,7 +1952,7 @@ def get_values_for_date(project, field_name, logger_name, date):
     else:
         return None
 
-def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_date, vwcs):
+def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_date, vwcs, optional_day = None):
     # Ensure field_name is safe for database use
     field_name = dbwriter.remove_unwanted_chars_for_db_dataset(field_name)
 
@@ -1962,6 +1962,8 @@ def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_
     # Parse dates
     start_date_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_date_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    if optional_day is not None:
+        optional_date_dt = datetime.strptime(optional_day, "%Y-%m-%d")
     today = datetime.today()
 
     # Ensure the end_date is not today or in the future
@@ -1972,10 +1974,13 @@ def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_
     start_date_prev_day = start_date_dt - timedelta(days=1)
 
     # Fetch values from the day before start_date
-    previous_day_values = get_values_for_date(project, field_name, logger_name, start_date_prev_day)
+    if optional_day is not None:
+        source_values = get_values_for_date(project, field_name, logger_name, optional_date_dt)
+    else:
+        source_values = get_values_for_date(project, field_name, logger_name, start_date_prev_day)
 
-    if previous_day_values:
-        vwc_1_value, vwc_2_value, vwc_3_value, fc, wp = previous_day_values
+    if source_values:
+        vwc_1_value, vwc_2_value, vwc_3_value, fc, wp = source_values
         current_date = start_date_dt
 
         # Loop through each date in the range and update/insert VWC data

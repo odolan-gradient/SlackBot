@@ -38,6 +38,7 @@ SHARED_DRIVE_ID = '0ACxUDm7mZyTVUk9PVA' # real
 PICKLE_FILE_ID = '1ywkb4_okDaBiMsju1nSbd6TvJjJ8XHRI' #2025
 # CREDENTIALS_FILE = r'C:\Users\odolan\PycharmProjects\SlackBot\client_secret_creds.json'
 #  trash pickle 1L-HCL32sR3rroEel293HAON_Q1wXqu6y, 1Kvb53U9rZoDlGRNljsfWIcdTofSkK2Zh
+DXD_FOLDER = '12tW4E9EmU-f3JynckrAJq3qd_Ndd-sH6'
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
 credentials_info = {
@@ -94,7 +95,7 @@ class CustomUnpickler(pickle.Unpickler):
             return PureWindowsPath
         elif module == "pathlib" and name == "PosixPath":
             return PosixPath
-        return super().find_class(module, name)
+        return super().find_class (module, name)
 
 
 def convert_to_pure_windows_path(obj):
@@ -439,6 +440,25 @@ def get_kml_from_coordinate(lat, lon, folder_id="12sNfi4L4BUwQM0JYx84tXafNp_Hur9
 
     return matching_files
 
+def find_file_id_by_name(name: str, folder_id: str) -> str | None:
+    """
+    Returns the Drive fileId for the *first* file whose name exactly matches
+    `name` inside `folder_id`, or None if not found.
+    """
+    service = get_drive_service()
+    escaped_name = name.replace("'", r"\'")
+    q = f"name = '{escaped_name}' and '{folder_id}' in parents and trashed = false"
+
+    resp = service.files().list(
+        q=q,
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
+        fields="files(id,name)",
+        pageSize=1
+    ).execute()
+    files = resp.get('files',[])
+    return files[0]['id'] if files else None
+
 # Example usage in your Slack bot
 def slack_bot(request):
     growers = open_pickle()
@@ -465,3 +485,4 @@ def scheduled_task(request):
 # show_pickle()
 # get_coords_from_kml_folder('1416')
 # get_kml_from_coordinate(36.862627, -120.607836)
+# find_file_id_by_name('z6-01143', DXD_FOLDER)

@@ -747,7 +747,7 @@ def only_certain_growers_fields_update(
     :param check_for_notifications: Boolean, True if you want to check for notifications, False otherwise
     """
     allGrowers = SharedPickle.open_pickle()
-    cimis_stations_pickle = open_pickle(filename="cimisStation.pickle")
+    cimis_stations_pickle = SharedPickle.open_pickle(filename="cimisStation.pickle")
     for g in allGrowers:
         for f in g.fields:
             if f.name in fields:
@@ -3916,49 +3916,7 @@ def uninstall_remaining_tomato_fields():
     print(fields_uninstalled_list)
     write_pickle(growers)
 
-def export_fields_to_csv(growers, output_file="fields_with_coordinates.csv"):
-    """
-    Exports a CSV containing grower names, field names, crop type, acres, region, latitudes, and longitudes.
-    For each field, the latitude and longitude are taken from the first logger in the field.
 
-    :param growers: List of Grower objects, each containing fields and loggers.
-    :param output_file: Name of the CSV file to save the data.
-    """
-    with open(output_file, mode="w", newline="") as csvfile:
-        writer = csv.writer(csvfile)
-        # Write the header
-        writer.writerow(["Grower Name", "Field Name", "Crop Type", "Acres", "Region", "Latitude", "Longitude"])
-
-        for grower in growers:
-            for field in grower.fields:
-                if field.loggers:
-                    # Use the first logger in the field to get lat and long
-                    first_logger = field.loggers[0]
-                    latitude = first_logger.lat
-                    longitude = first_logger.long
-
-                    # Write the grower and field data to the CSV
-                    writer.writerow([
-                        grower.name,
-                        field.name,
-                        field.crop_type,
-                        field.acres,
-                        grower.region,
-                        latitude,
-                        longitude
-                    ])
-
-        # Update schema to include new columns
-        new_schema = table_info.schema + [
-            bigquery.SchemaField(f'Year_{current_year}', 'DATE'),
-            bigquery.SchemaField(f'Year_{current_year}_ET', 'FLOAT'),
-        ]
-
-        # Write the new table back to BigQuery
-        print("Writing to table from csv")
-        db.write_to_table_from_csv(hist_dataset_id + '_test', station_number + '_test', filename, new_schema, project)
-
-    pass
 
 # def difference_in_eto(list_of_cimis_stations, )
 
@@ -3970,3 +3928,11 @@ def export_fields_to_csv(growers, output_file="fields_with_coordinates.csv"):
 # print(growers)
 # show_pickle(filename="2024_pickle_80.pickle")
 # show_pickle()
+# only_certain_growers_field_update('Lucero Rio Vista', 'Lucero Rio VistaW8, W9',
+#     get_weather=True,
+#     get_data=True,
+#     write_to_db=True,
+#     write_to_portal=True,
+#     check_for_notifications=True,
+#     zentra_api_version='v1',
+#      subtract_from_mrid=48)
