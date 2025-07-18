@@ -440,24 +440,88 @@ def get_kml_from_coordinate(lat, lon, folder_id="12sNfi4L4BUwQM0JYx84tXafNp_Hur9
 
     return matching_files
 
-def find_file_id_by_name(name: str, folder_id: str) -> str | None:
-    """
-    Returns the Drive fileId for the *first* file whose name exactly matches
-    `name` inside `folder_id`, or None if not found.
-    """
-    service = get_drive_service()
-    escaped_name = name.replace("'", r"\'")
-    q = f"name = '{escaped_name}' and '{folder_id}' in parents and trashed = false"
 
-    resp = service.files().list(
+def load_drive_file(file_id: str, filename: str):
+    """
+    If it’s a .pickle → use your existing open_pickle;
+    if it’s anything else (e.g. .dxd/.json) → stream & json.load().
+    """
+    if filename.lower().endswith(".pickle"):
+        return open_pickle(file_id=file_id)
+
+    # otherwise assume JSON
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh,
+                                     get_drive_service().files()
+                                     .get_media(fileId=file_id, supportsAllDrives=True)
+                                     )
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+    fh.seek(0)
+    return json.load(fh)
+
+
+def list_files_in_folder(folder_id: str) -> list[dict]:
+    """
+    Returns a list of {id, name} dicts for every non-trashed file
+    in the given folder (across My Drive or Shared Drives).
+    """
+    service    = get_drive_service()
+    files_out  = []
+    page_token = None
+
+    while True:
+        resp = service.files().list(
+            q=f"'{folder_id}' in parents and trashed = false",
+            supportsAllDrives       = True,
+            includeItemsFromAllDrives = True,
+            fields                  = "nextPageToken, files(id, name)",
+            pageToken               = page_token
+        ).execute()
+
+        files_out.extend(resp.get("files", []))
+        page_token = resp.get("nextPageToken")
+        if not page_token:
+            break
+
+    return files_out
+
+def find_file_id_in_folder(folder_id: str, file_name: str) -> str | None:
+    """
+    Returns the fileId of the *first* file named `file_name`
+    inside the Drive folder `folder_id`, or None if not found.
+    """
+    svc = get_drive_service()
+    # escape any single‐quotes in file_name
+    safe_name = file_name.replace("'", r"\'")
+    q = (
+        f"name = '{safe_name}' "
+        f"and '{folder_id}' in parents "
+        "and trashed = false"
+    )
+
+    resp = svc.files().list(
         q=q,
-        supportsAllDrives=True,
-        includeItemsFromAllDrives=True,
-        fields="files(id,name)",
-        pageSize=1
+        pageSize=1,
+        supportsAllDrives        = True,
+        includeItemsFromAllDrives = True,
+        fields                   = "files(id, name)"
     ).execute()
-    files = resp.get('files',[])
-    return files[0]['id'] if files else None
+
+    files = resp.get("files", [])
+    return files[0]["id"] if files else None
+
+def get_dxd_file(dxd_name):
+    '''
+    Returns the file named `dxd_name` in Google Drive
+    :param dxd_name: should have .dxd at the end
+    :return:
+    '''
+    dxd_id = find_file_id_in_folder(DXD_FOLDER, dxd_name)
+    dxd_data = load_drive_file(dxd_id, dxd_name)
+    return dxd_data
+
 
 # Example usage in your Slack bot
 def slack_bot(request):
@@ -478,11 +542,12 @@ def scheduled_task(request):
     print("Task executed at scheduled time.")
     return jsonify({"status": "success", "message": "Task executed."})
 
-# growers = open_pickle()
+# growers = open_pickle(DXD_FOLDER)
 # print()
 # write_pickle(growers)
-# list_shared_drive_files()
+# list_shared_drive_files(DXD_FOLDER)
 # show_pickle()
 # get_coords_from_kml_folder('1416')
 # get_kml_from_coordinate(36.862627, -120.607836)
 # find_file_id_by_name('z6-01143', DXD_FOLDER)
+get_dxd_file('z6-11492.dxd')

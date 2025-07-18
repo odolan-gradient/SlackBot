@@ -21,6 +21,7 @@ from DBWriter import DBWriter
 from Field import Field
 from Grower import Grower
 from Notifications import Notification_SensorError, Notification_TechnicianWarning
+from SharedPickle import get_dxd_file
 from Soils import Soil
 from Technician import Technician
 from Thresholds import Thresholds
@@ -254,7 +255,6 @@ class Logger(object):
         :param specific_end_date: String date in the format: m-d-Y H:M
         :return:
         """
-        response_success = False
 
         if zentra_api_version == 'v1':
             mr_id = 0
@@ -264,10 +264,6 @@ class Logger(object):
                 specific_file_name = self.id + '.dxd'
             else:
                 specific_file_name = specific_file_name + '.dxd'
-            if path.exists(mr_id_location):
-                mr_id_file_path = mr_id_location + specific_file_name
-            if path.exists(dxd_save_location):
-                dxd_save_location_file_path = dxd_save_location + specific_file_name
 
             if self.crashed:
                 print("\tCrashed so running with previous MRID: {0}".format(self.prev_mrid))
@@ -276,10 +272,9 @@ class Logger(object):
                 self.crashed = False
                 mr_id_to_set_back = 0
             else:
-                if self.is_file(mr_id_file_path):
-                    file_mrid = self.read_mrid(mr_id_file_path)
-                else:
-                    file_mrid = 0
+                dxd_file = get_dxd_file(specific_file_name)
+                file_mrid = self.get_mrid(dxd_file)
+
                 print(f'\tDXD mrid = {file_mrid}')
                 mr_id_to_set_back = file_mrid
                 if specific_mrid is not None:
@@ -318,10 +313,10 @@ class Logger(object):
                 elapsed_time = api_time_end - api_time_start
                 print(f'v1 API call took {round(elapsed_time)} secs')
                 parsed_json = json.loads(response.content)
-                self.write_dxd_file(dxd_save_location_file_path, parsed_json, mr_id_to_set_back)
+                self.write_dxd_to_drive(dxd_save_location_file_path, parsed_json, mr_id_to_set_back)
 
                 print('Reading data-')
-                raw_dxd = self.read_dxd()
+                raw_dxd = get_dxd_file(specific_file_name)
                 raw_data = self.get_all_ports_information(raw_dxd)
                 print('-Finished')
                 print()
@@ -331,6 +326,82 @@ class Logger(object):
                 print('\tResponse not OK')
                 response_success = False
             return response_success, converted_raw_data
+        # #
+        # if zentra_api_version == 'v1':
+        #     mr_id = 0
+        #     mr_id_file_path = ''
+        #     dxd_save_location_file_path = ''
+        #     if specific_file_name is None:
+        #         specific_file_name = self.id + '.dxd'
+        #     else:
+        #         specific_file_name = specific_file_name + '.dxd'
+        #     if path.exists(mr_id_location):
+        #         mr_id_file_path = mr_id_location + specific_file_name
+        #     if path.exists(dxd_save_location):
+        #         dxd_save_location_file_path = dxd_save_location + specific_file_name
+        #
+        #     if self.crashed:
+        #         print("\tCrashed so running with previous MRID: {0}".format(self.prev_mrid))
+        #         mr_id = self.prev_mrid
+        #         # Resetting the crashed boolean
+        #         self.crashed = False
+        #         mr_id_to_set_back = 0
+        #     else:
+        #         if self.is_file(mr_id_file_path):
+        #             file_mrid = self.read_mrid(mr_id_file_path)
+        #         else:
+        #             file_mrid = 0
+        #         print(f'\tDXD mrid = {file_mrid}')
+        #         mr_id_to_set_back = file_mrid
+        #         if specific_mrid is not None:
+        #             # We passed in a specific_mrid
+        #             mr_id = specific_mrid
+        #             print(
+        #                 f"\t-->> Running from specific MRID: {str(specific_mrid)}"
+        #             )
+        #         elif subtract_from_mrid > 0:
+        #             # We passed in a subtract_from_mrid
+        #             mr_id = file_mrid - subtract_from_mrid
+        #             print(
+        #                 f"\t-->> Subtracting from MRID: {str(file_mrid)} - {str(subtract_from_mrid)} = {str(mr_id)}"
+        #             )
+        #         else:
+        #             # No special pass in's, just default run
+        #             mr_id = file_mrid
+        #             mr_id_to_set_back = 0
+        #             self.prev_mrid = mr_id
+        #
+        #     if mr_id < 0:
+        #         print(f'\tMRID is negative {mr_id}, so setting to 0')
+        #         mr_id = 0
+        #
+        #     # # TEMPORARY HARDCODE SUBTRACT TO GET 21 DAYS OF DATA
+        #     # if self.crop_type in ['almonds', 'Almonds', 'almond']:
+        #     #     mr_id = mr_id - (24*21)
+        #     # ######################
+        #     api_time_start = time.time()
+        #     response = self.zentra_api_call(mr_id)
+        #     converted_raw_data = None
+        #
+        #     if response.ok:
+        #         response_success = True
+        #         api_time_end = time.time()
+        #         elapsed_time = api_time_end - api_time_start
+        #         print(f'v1 API call took {round(elapsed_time)} secs')
+        #         parsed_json = json.loads(response.content)
+        #         self.write_dxd_file(dxd_save_location_file_path, parsed_json, mr_id_to_set_back)
+        #
+        #         print('Reading data-')
+        #         raw_dxd = self.read_dxd()
+        #         raw_data = self.get_all_ports_information(raw_dxd)
+        #         print('-Finished')
+        #         print()
+        #         converted_raw_data = raw_data
+        #
+        #     else:
+        #         print('\tResponse not OK')
+        #         response_success = False
+        #     return response_success, converted_raw_data
 
         elif zentra_api_version == 'v4':
             device_sn = self.id
@@ -442,6 +513,49 @@ class Logger(object):
             self.updated = False
             print(error)
 
+    def write_dxd_to_drive(
+            self,
+            file_id: str,
+            data_json: dict,
+            mr_id_to_set_back: int = 0,
+            date_to_set_back: str = None,
+    ):
+        """
+        Applies your MRID / date tweaks to data_json, then uploads it
+        back into the existing Drive file identified by file_id.
+        """
+        start = time.time()
+        print("\tWriting DXD to Drive…")
+
+        # — your existing JSON‑tweaks —
+        if mr_id_to_set_back > 0 and "created" in data_json:
+            print(f"\tAdjusting MRID → {mr_id_to_set_back}")
+            data_json['device']['timeseries'][-1]['configuration']['values'][-1][1] = mr_id_to_set_back
+
+        if date_to_set_back is not None and isinstance(data_json, list):
+            print(f"\tAdjusting page_end_date → {date_to_set_back}")
+            if "pagination" in data_json[-1]:
+                data_json[-1]['pagination']['page_end_date'] = date_to_set_back
+
+        # — serialize to JSON bytes —
+        payload = json.dumps(data_json, indent=4, sort_keys=True, default=str).encode('utf-8')
+        media = MediaIoBaseUpload(io.BytesIO(payload),
+                                  mimetype='application/json',
+                                  resumable=True)
+
+        # — upload via Drive API —
+        svc = get_drive_service()
+        svc.files().update(
+            fileId=file_id,
+            media_body=media,
+            supportsAllDrives=True
+        ).execute()
+
+        # — timing log —
+        elapsed = time.time() - start
+        h, r = divmod(elapsed, 3600)
+        m, s = divmod(r, 60)
+        print(f"\tDone in {int(h)}h{int(m)}m{int(s)}s\n")
     def zentra_api_call(self, mr_id):
         print('\tCalling Zentra API...')
         url = 'https://zentracloud.com/api/v1/readings'
@@ -538,6 +652,17 @@ class Logger(object):
                 self.prev_mrid = mrid
                 return mrid
         return 0
+    def get_mrid(self, data):
+        '''
+        Meant for serverless dxd grab so no file path just pass the data object
+        :param data:
+        :return:
+        '''
+        if "created" in data:
+            mrid = data['device']['timeseries'][-1]['configuration']['values'][-1][1]
+            self.prev_mrid = mrid
+            return mrid
+        return 0
 
     def read_last_data_date(self, file_path: str):
         """
@@ -594,14 +719,13 @@ class Logger(object):
             Battery level if found, None if not
         """
         if zentra_api_version == 'v1':
-            if path.exists(DXD_DIRECTORY):
-                file_name = DXD_DIRECTORY + self.id + '.dxd'
+            file_name = DXD_DIRECTORY + self.id + '.dxd'
+            dxd_file = get_dxd_file(file_name)
+            data = json.load(dxd_file)
+            if "created" in data:
+                battery_level = data['device']['timeseries'][-1]['configuration']['values'][-1][-2][0]['value']
+                return battery_level
 
-            with open(file_name) as file:
-                data = json.load(file)
-                if "created" in data:
-                    battery_level = data['device']['timeseries'][-1]['configuration']['values'][-1][-2][0]['value']
-                    return battery_level
         elif zentra_api_version == 'v4':
             if path.exists(DXD_DIRECTORY):
                 file_name = DXD_DIRECTORY + self.id + '_v4.dxd'
