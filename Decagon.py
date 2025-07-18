@@ -747,7 +747,8 @@ def only_certain_growers_fields_update(
     :param check_for_notifications: Boolean, True if you want to check for notifications, False otherwise
     """
     allGrowers = SharedPickle.open_pickle()
-    cimis_stations_pickle = SharedPickle.open_pickle(filename="cimisStation.pickle")
+    CIMIS_PICKLE_ID = '1pSTOPbXU2i9hJzl7Lwx_rjcgEnc1k2J9'
+    cimis_stations_pickle = SharedPickle.open_pickle(CIMIS_PICKLE_ID)
     for g in allGrowers:
         for f in g.fields:
             if f.name in fields:
