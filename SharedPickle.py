@@ -520,7 +520,7 @@ def get_dxd_file(dxd_name):
     '''
     dxd_id = find_file_id_in_folder(DXD_FOLDER, dxd_name)
     dxd_data = load_drive_file(dxd_id, dxd_name)
-    return dxd_data
+    return dxd_data, dxd_id
 
 
 # Example usage in your Slack bot
@@ -550,4 +550,4 @@ def scheduled_task(request):
 # get_coords_from_kml_folder('1416')
 # get_kml_from_coordinate(36.862627, -120.607836)
 # find_file_id_by_name('z6-01143', DXD_FOLDER)
-get_dxd_file('z6-11492.dxd')
+# get_dxd_file('z6-11492.dxd')

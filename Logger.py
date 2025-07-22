@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import io
 import json
 import time
 import xml.etree.ElementTree as ET
@@ -22,10 +23,12 @@ from Field import Field
 from Grower import Grower
 from Notifications import Notification_SensorError, Notification_TechnicianWarning
 from SharedPickle import get_dxd_file
+from SheetsHandler import get_drive_service
 from Soils import Soil
 from Technician import Technician
 from Thresholds import Thresholds
 from Zentra import Zentra
+from googleapiclient.http import MediaIoBaseUpload
 
 DIRECTORY_YEAR = "2025"
 DXD_DIRECTORY = "H:\\Shared drives\\Stomato\\" + DIRECTORY_YEAR + "\\Dxd Files\\"
@@ -257,14 +260,13 @@ class Logger(object):
         """
 
         if zentra_api_version == 'v1':
-            mr_id = 0
-            mr_id_file_path = ''
-            dxd_save_location_file_path = ''
             if specific_file_name is None:
                 specific_file_name = self.id + '.dxd'
             else:
                 specific_file_name = specific_file_name + '.dxd'
 
+            dxd_file, file_id = get_dxd_file(specific_file_name)
+            file_mrid = self.get_mrid(dxd_file)
             if self.crashed:
                 print("\tCrashed so running with previous MRID: {0}".format(self.prev_mrid))
                 mr_id = self.prev_mrid
@@ -272,9 +274,6 @@ class Logger(object):
                 self.crashed = False
                 mr_id_to_set_back = 0
             else:
-                dxd_file = get_dxd_file(specific_file_name)
-                file_mrid = self.get_mrid(dxd_file)
-
                 print(f'\tDXD mrid = {file_mrid}')
                 mr_id_to_set_back = file_mrid
                 if specific_mrid is not None:
@@ -313,10 +312,10 @@ class Logger(object):
                 elapsed_time = api_time_end - api_time_start
                 print(f'v1 API call took {round(elapsed_time)} secs')
                 parsed_json = json.loads(response.content)
-                self.write_dxd_to_drive(dxd_save_location_file_path, parsed_json, mr_id_to_set_back)
+                self.write_dxd_to_drive(file_id, parsed_json, mr_id_to_set_back)
 
                 print('Reading data-')
-                raw_dxd = get_dxd_file(specific_file_name)
+                raw_dxd, file_id = get_dxd_file(specific_file_name)
                 raw_data = self.get_all_ports_information(raw_dxd)
                 print('-Finished')
                 print()
@@ -543,11 +542,10 @@ class Logger(object):
                                   mimetype='application/json',
                                   resumable=True)
 
-        # — upload via Drive API —
-        svc = get_drive_service()
-        svc.files().update(
+        svc = get_drive_service(drive_service='drive')
+        result = svc.files().update(
             fileId=file_id,
-            media_body=media,
+            media_body=media,  # This should work in v3
             supportsAllDrives=True
         ).execute()
 
@@ -720,7 +718,7 @@ class Logger(object):
         """
         if zentra_api_version == 'v1':
             file_name = DXD_DIRECTORY + self.id + '.dxd'
-            dxd_file = get_dxd_file(file_name)
+            dxd_file, _ = get_dxd_file(file_name)
             data = json.load(dxd_file)
             if "created" in data:
                 battery_level = data['device']['timeseries'][-1]['configuration']['values'][-1][-2][0]['value']

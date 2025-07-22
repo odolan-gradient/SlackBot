@@ -52,12 +52,17 @@ credentials_info = {
 }
 
 
-def get_drive_service():
+def get_drive_service(drive_service=None):
     credentials = service_account.Credentials.from_service_account_info(
         credentials_info,
         scopes=['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets'])
-
-    service = build('sheets', 'v4', credentials=credentials)
+    if drive_service:
+        if drive_service == 'spreadsheets':
+            service = build(f'{drive_service}', 'v4', credentials=credentials)
+        elif drive_service == 'drive':
+            service = build(f'{drive_service}', 'v3', credentials=credentials)
+    else:
+        service = build('sheets', 'v4', credentials=credentials)
     return service
 
 
@@ -189,7 +194,7 @@ def billing_report_new_tab_v2(growers):
     from datetime import datetime
 
     spreadsheet_id = '137KpyvSKY_LCqiups4EAcwMQPYHV_a55bjwRQAMEX_k'
-    service = get_drive_service()
+    service = get_drive_service(drive_service='sheets')
 
     # Retrieve all existing sheet names and build a record of what fields have already been written
     sheet_names = get_all_sheet_names(service, spreadsheet_id)

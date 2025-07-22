@@ -906,8 +906,8 @@ def slack_bot(request):
 
 #  to run locally (not needed for Cloud Functions)
 # need to be running the file for Slack API to accept the ngrok http url
-if __name__ == "__main__":
-    flask_app.run(port=int(os.getenv("PORT", 3000)))
+# if __name__ == "__main__":
+#     flask_app.run(port=int(os.getenv("PORT", 3000)))
 
 # if __name__ == "__main__":
 #     app.start(port=int(os.getenv("PORT", 3000)))
@@ -925,3 +925,5 @@ if __name__ == "__main__":
 # TODO add feature to delete PSI
 # TODO feature to delete days and rerun with PSI on
 # TODO change BQ any value for any day so dont have to run queries every time
+# field_names = ['Carvalho308']
+# Decagon.only_certain_growers_fields_update(fields=field_names, get_data=True, get_weather=True, write_to_db=True, write_to_portal=True, subtract_from_mrid=200)
