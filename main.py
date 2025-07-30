@@ -1,5 +1,7 @@
+import json
 import os
 from collections import defaultdict
+import re
 
 from dotenv import load_dotenv
 from flask import Flask, request
@@ -12,11 +14,12 @@ import SharedPickle
 import SheetsHandler
 import Soils
 import slackFunctions
+from SharedPickle import get_project
 from blocks import field_list_menu, logger_and_soil_list_menu, logger_and_toggle_menu, logger_and_dates_menu, \
     logger_select_block, main_menu, get_soil_menu, show_pickle_menu, use_prev_days_menu, grower_select_block, \
     get_field_location_menu, get_coord_location_menu, turn_on_psi_menu, change_soil_menu, logger_delete_menu, \
     modify_value_selector_menu, change_gpm_menu, logger_and_gpm_menu, run_field_menu, uninstall_field_menu, \
-    uninstall_button_menu
+    uninstall_button_menu, update_irr_menu, generate_irrigation_row_blocks
 from slackFunctions import change_logger_soil_type, delete_psi_values_for_logger_and_range, bulk_toggle_psi, \
     delete_psi_values_for_specific_logger, update_gpm_irrigation_acres_for_logger
 
@@ -52,7 +55,8 @@ def main_menu_command(ack, body, respond):
         # just Ollie  U06NJRAT1T2
         elif body['user_id'] in ['U06NJRAT1T2']:
             menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Delete PSI values', 'Show Pickle', 'Use Previous Days VWC',
-                            'Modify Values', 'Add Grower Billing', 'Get Field Location', 'Change GPM / Irr Acres', 'Run Field', 'Uninstall Fields']
+                            'Modify Values', 'Add Grower Billing', 'Get Field Location', 'Change GPM / Irr Acres', 'Run Field', 'Uninstall Fields',
+                            'Update Irr. Hours']
         else:
             menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Delete PSI values', 'Show Pickle', 'Add Grower Billing', 'Get Field Location',
                             'Change GPM / Irr Acres', 'Uninstall Fields']
@@ -94,6 +98,9 @@ def handle_main_menu(ack, body, respond):
         run_field_menu(ack, respond, grower_names)
     elif menu_option == 'Uninstall Fields':
         uninstall_field_menu(ack, respond, grower_names)
+    elif menu_option == 'Update Irr. Hours':
+        update_irr_menu(ack, respond, grower_names)
+
 
 
 
@@ -107,6 +114,7 @@ def handle_main_menu(ack, body, respond):
 @app.action("grower_select_gpm")
 @app.action("grower_select_run_field")
 @app.action("grower_select_uninstall_field")
+@app.action('grower_select_update_irr')
 def handle_grower_menu(ack, body, client, respond):
     ack()
 
@@ -157,6 +165,9 @@ def handle_grower_menu(ack, body, client, respond):
         action_id = 'field_select_uninstall_field'
         field_list_menu(ack, respond, field_list=all_fields, action_id=action_id, active_fields=active_fields)
         return
+    elif grower_action_id == 'grower_select_update_irr':
+        action_id = 'field_select_update_irr'
+        field_list_menu(ack, respond, field_list, action_id)
     elif grower_action_id == 'grower_select_show':
 
         # SheetsHandler.log_request_to_sheet(request_name, username, info)
@@ -184,6 +195,100 @@ def handle_grower_menu(ack, body, client, respond):
         request_name = 'Show Pickle'
         info = selected_value
         SheetsHandler.log_request_to_sheet(request_name, username, info)
+
+@app.action("field_select_change_soil")
+@app.action("field_select_psi")
+@app.action("field_select_delete_psi")
+@app.action("field_select_prev_day")
+@app.action("field_select_modify_values")
+@app.action("field_select_modify_values")
+@app.action("field_select_gpm")
+@app.action("field_select_run_field")
+@app.action("field_select_update_irr")
+def handle_field_select(ack, body, respond):
+    ack()
+    print('Handling Field Select')
+    action = body['actions'][0]
+    action_id = action['action_id']
+    user_id = body['user']['id']
+
+    # Handle both single-select and multi-select cases
+    if 'selected_option' in action:
+        field_names = [fix_ampersand(action['selected_option']['value'])]
+    elif 'selected_options' in action:
+        field_names = [fix_ampersand(opt['value']) for opt in action['selected_options']]
+    else:
+        respond("No field selected.")
+        return
+
+    # Save all selected fields
+    user_selections[user_id]['fields'] = field_names
+
+    # Open the pickle once and get all requested Field objects
+    growers = SharedPickle.open_pickle()
+    fields = SharedPickle.get_fields(field_names, growers=growers)
+
+    # Build your flat logger list, extend makes it so its all one list instead of list of lists with each inner list being each fields loggers
+    logger_list = []
+    for f in fields:
+        logger_list.extend(l.name for l in f.loggers)
+    # dedupe (gets rid of any duplicates)
+    # dict.fromkeys makes a dict with the keys being the values of logger_list and their values set to None
+    # concise way to remove dups since dict cant have dup keys
+    logger_list = list(dict.fromkeys(logger_list))
+
+    # Route based on action
+    if action_id == 'field_select_change_soil':
+        print('\tField Select Change Soil')
+        soil_types = [
+            'Sand (10-5)', 'Loamy Sand (12-5)', 'Sandy Loam (18-8)', 'Sandy Clay Loam (27-17)',
+            'Loam (28-14)', 'Sandy Clay (36-25)', 'Silt Loam (31-11)', 'Silt (30-6)',
+            'Clay Loam (36-22)', 'Silty Clay Loam (38-22)', 'Silty Clay (41-27)', 'Clay (42-30)'
+        ]
+        logger_and_soil_list_menu(ack, respond, logger_list, soil_types)
+
+    elif action_id == 'field_select_psi':
+        print('\tField Select PSI')
+        user_selections[user_id]['logger_select_psi'] = logger_list
+        blocks = logger_and_toggle_menu(logger_list, preselected=logger_list)
+        respond(blocks=blocks)
+
+    elif action_id == 'field_select_delete_psi':
+        print('\tField Delete PSI')
+        user_selections[user_id]['logger_select_delete_psi'] = logger_list
+        blocks = logger_delete_menu(logger_list, preselected=logger_list)
+        respond(blocks=blocks)
+
+    elif action_id == 'field_select_prev_day':
+        print('\tField Prev Day')
+        logger_and_dates_menu(ack, respond, logger_list)
+
+    elif action_id == 'field_select_modify_values':
+        print('\t Field Modify Values')
+        user_selections[user_id]['logger_select_modify_values'] = logger_list
+        blocks = logger_select_block(logger_list, action_id)
+        respond(blocks=blocks)
+    elif action_id == 'field_select_gpm':
+        user_selections[user_id]['fields'] = field_names
+        blocks = logger_and_gpm_menu(ack, respond, logger_list)
+        respond(blocks=blocks)
+    elif action_id == 'field_select_run_field':
+        # Save the selected field
+        user_selections[user_id]['fields'] = field_names
+
+        Decagon.only_certain_growers_fields_update(fields=field_names, get_data=True, get_weather=True, write_to_db=True, write_to_portal=True, subtract_from_mrid=200)
+        # my_service.run_field(
+        #     grower=user_selections[user_id]['grower'].name,
+        #     field=field_names[0]
+        # )
+
+        respond(text=f"Ran field `{field_names[0]}` for grower `{user_selections[user_id]['grower'].name}`…")
+        user_selections.pop(user_id, None)
+        return
+    elif action_id == 'field_select_update_irr':
+        user_selections[user_id]['loggers'] = logger_list
+        blocks = logger_select_block(logger_list, action_id='logger_select_update_irr')
+        respond(blocks=[blocks])
 
 @app.action("get_field_location")
 def handle_field_location_lookup(ack, body, respond):
@@ -446,97 +551,6 @@ def handle_prev_day_selections(ack, body, respond):
     # clean up
     del user_selections[user_id]
 
-
-
-@app.action("field_select_change_soil")
-@app.action("field_select_psi")
-@app.action("field_select_delete_psi")
-@app.action("field_select_prev_day")
-@app.action("field_select_modify_values")
-@app.action("field_select_modify_values")
-@app.action("field_select_gpm")
-@app.action("field_select_run_field")
-# @app.action("field_select_uninstall_field")
-def handle_field_select(ack, body, respond):
-    ack()
-    print('Handling Field Select')
-    action = body['actions'][0]
-    action_id = action['action_id']
-    user_id = body['user']['id']
-
-    # Handle both single-select and multi-select cases
-    if 'selected_option' in action:
-        field_names = [fix_ampersand(action['selected_option']['value'])]
-    elif 'selected_options' in action:
-        field_names = [fix_ampersand(opt['value']) for opt in action['selected_options']]
-    else:
-        respond("No field selected.")
-        return
-
-    # Save all selected fields
-    user_selections[user_id]['fields'] = field_names
-
-    # Open the pickle once and get all requested Field objects
-    growers = SharedPickle.open_pickle()
-    fields = SharedPickle.get_fields(field_names, growers=growers)
-
-    # Build your flat logger list, extend makes it so its all one list instead of list of lists with each inner list being each fields loggers
-    logger_list = []
-    for f in fields:
-        logger_list.extend(l.name for l in f.loggers)
-    # dedupe (gets rid of any duplicates)
-    # dict.fromkeys makes a dict with the keys being the values of logger_list and their values set to None
-    # concise way to remove dups since dict cant have dup keys
-    logger_list = list(dict.fromkeys(logger_list))
-
-    # Route based on action
-    if action_id == 'field_select_change_soil':
-        print('\tField Select Change Soil')
-        soil_types = [
-            'Sand (10-5)', 'Loamy Sand (12-5)', 'Sandy Loam (18-8)', 'Sandy Clay Loam (27-17)',
-            'Loam (28-14)', 'Sandy Clay (36-25)', 'Silt Loam (31-11)', 'Silt (30-6)',
-            'Clay Loam (36-22)', 'Silty Clay Loam (38-22)', 'Silty Clay (41-27)', 'Clay (42-30)'
-        ]
-        logger_and_soil_list_menu(ack, respond, logger_list, soil_types)
-
-    elif action_id == 'field_select_psi':
-        print('\tField Select PSI')
-        user_selections[user_id]['logger_select_psi'] = logger_list
-        blocks = logger_and_toggle_menu(logger_list, preselected=logger_list)
-        respond(blocks=blocks)
-
-    elif action_id == 'field_select_delete_psi':
-        print('\tField Delete PSI')
-        user_selections[user_id]['logger_select_delete_psi'] = logger_list
-        blocks = logger_delete_menu(logger_list, preselected=logger_list)
-        respond(blocks=blocks)
-
-    elif action_id == 'field_select_prev_day':
-        print('\tField Prev Day')
-        logger_and_dates_menu(ack, respond, logger_list)
-
-    elif action_id == 'field_select_modify_values':
-        print('\t Field Modify Values')
-        user_selections[user_id]['logger_select_modify_values'] = logger_list
-        blocks = logger_select_block(logger_list, action_id)
-        respond(blocks=blocks)
-    elif action_id == 'field_select_gpm':
-        user_selections[user_id]['fields'] = field_names
-        blocks = logger_and_gpm_menu(ack, respond, logger_list)
-        respond(blocks=blocks)
-    elif action_id == 'field_select_run_field':
-        # Save the selected field
-        user_selections[user_id]['fields'] = field_names
-
-        Decagon.only_certain_growers_fields_update(fields=field_names, get_data=True, get_weather=True, write_to_db=True, write_to_portal=True, subtract_from_mrid=200)
-        # my_service.run_field(
-        #     grower=user_selections[user_id]['grower'].name,
-        #     field=field_names[0]
-        # )
-
-        respond(text=f"Ran field `{field_names[0]}` for grower `{user_selections[user_id]['grower'].name}`…")
-        user_selections.pop(user_id, None)
-        return
 
 @app.action("field_select_uninstall_field")
 def handle_field_select_uninstall(ack, body, respond):
@@ -860,23 +874,6 @@ def add_billing_menu(ack, respond, body, growers):
     # respond(response)
 
 
-# def toggle_psi(grower_name, field_names, logger_name, psi_toggle, growers):
-#     response_text = ''
-#     for grower in growers:
-#         if grower.name == grower_name:
-#             for field in grower.fields:
-#                 if field.name in field_names:
-#                     for logger in field.loggers:
-#                         if logger.name == logger_name:
-#                             if psi_toggle == 'off':  # if On
-#                                 response_text += f'Turned Off IR for {logger.name}\n'
-#                                 logger.ir_active = False
-#                             if psi_toggle == 'on':
-#                                 response_text += f'Turned On IR for {logger.name}\n'
-#                                 logger.ir_active = True
-#     SharedPickle.write_pickle(growers)
-#     return response_text
-
 
 def delete_psi_menu(ack, respond, grower_names):
     ack()
@@ -892,6 +889,130 @@ def delete_psi_menu(ack, respond, grower_names):
 
     respond(response)
 
+@app.action("logger_select_update_irr")
+def handle_logger_select_update_irr(ack, body, client, respond):
+    ack()
+    user_id = body["user"]["id"]
+    user_name = body["user"]["name"]
+    action = body["actions"][0]
+    selected = [action["selected_option"]["value"]]
+    user_selections[user_id]["loggers"] = selected
+
+    # metadata needed for respond()
+    channel_id = body["channel"]["id"]
+
+    if "selected_option" in action:
+        loggers = [action["selected_option"]["value"]]
+    else:
+        loggers = [opt["value"] for opt in action["selected_options"]]
+
+    user_selections[user_id]["loggers"] = loggers
+    metadata = json.dumps({
+        "grower": user_selections[user_id]["grower"].name,
+        "field": user_selections[user_id]["fields"][0],
+        "loggers": loggers,
+        "channel": channel_id,
+        "user": user_id,
+        "user_name": user_name,})
+
+    # open modal
+    client.views_open(
+        trigger_id=body["trigger_id"],
+        view={
+            "type": "modal",
+            "callback_id": "update_irr_hours_modal",
+            "title": {"type": "plain_text", "text": "Update Irrigation Hours", "emoji": True},
+            "submit": {"type": "plain_text", "text": "Submit", "emoji": True},
+            "private_metadata": metadata,
+            "blocks": [
+                *generate_irrigation_row_blocks(0),
+                {
+                    "type": "actions",
+                    "block_id": "add_row_block",
+                    "elements": [
+                        {
+                            "type": "button",
+                            "action_id": "add_irr_row",
+                            "text": {"type": "plain_text", "text": "Add another date", "emoji": True},
+                            "value": "0",
+                        }
+                    ],
+                },
+            ],
+        },
+    )
+
+# ─── Handle “Add another date” clicks ────────────────────────────────────
+@app.action("add_irr_row")
+def handle_add_irr_row(ack, body, client):
+    ack()
+    view = body["view"]
+    blocks = view["blocks"]
+    # find next index
+    existing = [int(b["block_id"].split("_")[-1])
+                for b in blocks if b.get("block_id", "").startswith("hours_block_")]
+    next_idx = (max(existing) + 1) if existing else 0
+
+    # insert new row before the add‑button block
+    insert_at = next(i for i,b in enumerate(blocks) if b.get("block_id") == "add_row_block")
+    new_blocks = generate_irrigation_row_blocks(next_idx)
+    updated = blocks[:insert_at] + new_blocks + blocks[insert_at:]
+
+    client.views_update(
+        view_id=view["id"],
+        hash=view["hash"],
+        view={
+            "type": view["type"],
+            "callback_id": view["callback_id"],
+            "private_metadata": view["private_metadata"],
+            "title": view["title"],
+            "submit": view["submit"],
+            "blocks": updated,
+        },
+    )
+
+# whenever any date_picker_<n> is used, just ack the action
+@app.action(re.compile(r"date_picker_\d+"))
+def handle_any_date_picker(ack, body):
+    ack()
+
+@app.view("update_irr_hours_modal")
+def handle_update_irr_hours_submission(ack, body, client):
+    ack()
+    view = body["view"]
+    meta = json.loads(view["private_metadata"])
+    grower = meta["grower"]
+    field = meta["field"]
+    logger = meta["loggers"][0]
+    channel = meta["channel"]
+    user_id = meta["user"]
+    user_name = meta["user_name"]
+    state = view["state"]["values"]
+    entries = []
+
+    # gather all rows
+    for block_id, action in state.items():
+        if block_id.startswith("hours_block_"):
+            idx = block_id.split("_")[-1] #checks which entry cuz there can be multiple dates
+            hrs = float(action[f"hours_input_{idx}"]["value"])
+            dt  = state[f"date_block_{idx}"][f"date_picker_{idx}"]["selected_date"]
+            entries.append({"date": dt, "hours": hrs})
+
+    # grower = user_selections[user_id]["grower"].name
+    # field   = user_selections[user_id]["fields"][0]
+    # logger = user_selections[user_id]["loggers"][0]
+    project = get_project(field, grower)
+
+    # TODO: actually write entries into your DB or pickle here
+    for entry in entries:
+        SQLScripts.update_irrigation_hours_for_date(project, field, logger, daily_hours=entry["hours"], date=entry["date"])
+
+    summary = "\n".join(f"• {e['date']}: {e['hours']}h" for e in entries)
+    # respond(f"*Updated irrigation for* `{grower}` / `{field}` / `{logger}`:\n"+ summary)
+
+    client.chat_postEphemeral(channel = channel,user = user_id,text = f"*Updated irrigation for* `{grower}` / `{field}` / `{logger}`:\n{summary}")
+    SheetsHandler.log_request_to_sheet('Update Irr Hours', user_name, f'{field} / {logger}: {summary}"')
+    user_selections.pop(user_id, None)
 
 # Entry point for Google Cloud Functions
 @flask_app.route('/slack/events', methods=['POST'])
@@ -906,8 +1027,8 @@ def slack_bot(request):
 
 #  to run locally (not needed for Cloud Functions)
 # need to be running the file for Slack API to accept the ngrok http url
-# if __name__ == "__main__":
-#     flask_app.run(port=int(os.getenv("PORT", 3000)))
+if __name__ == "__main__":
+    flask_app.run(port=int(os.getenv("PORT", 3000)))
 
 # if __name__ == "__main__":
 #     app.start(port=int(os.getenv("PORT", 3000)))

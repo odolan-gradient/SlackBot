@@ -414,7 +414,13 @@ def logger_and_gpm_menu(ack, respond, logger_list, preselected=None):
 def logger_select_block(logger_list, action_id, initial_selected=None):
     # Generate the full list of options
     options = generate_options(logger_list)
-
+    type = "multi_static_select"
+    text1 = "Choose logger(s) to change"
+    text2 = "Select logger(s)"
+    if action_id in ['logger_select_update_irr']:
+        type = 'static_select'
+        text1 = "Choose logger to update"
+        text2 = "Select logger"
     # Filter initial options to only include valid matches
     initial_opts = []
     if initial_selected:
@@ -427,13 +433,13 @@ def logger_select_block(logger_list, action_id, initial_selected=None):
         "type": "section",
         "text": {
             "type": "mrkdwn",
-            "text": "Choose logger(s) to change"
+            "text": text1
         },
         "accessory": {
-            "type": "multi_static_select",
+            "type": type,
             "placeholder": {
                 "type": "plain_text",
-                "text": "Select logger(s)",
+                "text": text2,
                 "emoji": True
             },
             "options": options,
@@ -832,6 +838,17 @@ def uninstall_field_menu(ack, respond, grower_names):
         ]
     })
 
+def update_irr_menu(ack, respond, grower_names):
+    ack()
+    action_id = 'grower_select_update_irr'
+    respond({
+        "response_type": "in_channel",
+        "text": "Update Irr Hours",
+        "attachments": [
+            grower_select_block(grower_names, action_id)
+        ]
+    })
+
 def uninstall_button_menu(ack, respond, picked_md):
     # now re‑render two buttons: Back to grower or Confirm uninstall
     return [
@@ -860,4 +877,28 @@ def uninstall_button_menu(ack, respond, picked_md):
                 }
             ]
         }
+    ]
+
+def generate_irrigation_row_blocks(idx: int):
+    return [
+        {
+            "type": "input",
+            "block_id": f"hours_block_{idx}",
+            "label": {"type": "plain_text", "text": f"Irrigation Hours #{idx+1}", "emoji": True},
+            "element": {
+                "type": "plain_text_input",
+                "action_id": f"hours_input_{idx}",
+                "placeholder": {"type": "plain_text", "text": "e.g. 2.5"},
+            },
+        },
+        {
+            "type": "input",
+            "block_id": f"date_block_{idx}",
+            "label": {"type": "plain_text", "text": f"Date #{idx+1}", "emoji": True},
+            "element": {
+                "type": "datepicker",
+                "action_id": f"date_picker_{idx}",
+                "placeholder": {"type": "plain_text", "text": "Select a date"},
+            },
+        },
     ]
