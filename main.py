@@ -59,7 +59,7 @@ def main_menu_command(ack, body, respond):
                             'Update Irr. Hours']
         else:
             menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Delete PSI values', 'Show Pickle', 'Add Grower Billing', 'Get Field Location',
-                            'Change GPM / Irr Acres', 'Uninstall Fields']
+                            'Change GPM / Irr Acres', 'Uninstall Fields', 'Update Irr. Hours']
         main_menu(ack, respond, menu_options)
     except Exception as e:
         print(f"Error: {e}")
