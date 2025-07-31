@@ -864,7 +864,7 @@ def uninstall_button_menu(ack, respond, picked_md):
             "elements": [
                 {
                     "type": "button",
-                    "text": {"type": "plain_text", "text": "← Another Grower"},
+                    "text": {"type": "plain_text", "text": "← Add More Fields"},
                     "action_id": "uninstall_add_grower",
                     "value": "back"
                 },
