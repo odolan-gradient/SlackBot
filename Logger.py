@@ -22,8 +22,7 @@ from DBWriter import DBWriter
 from Field import Field
 from Grower import Grower
 from Notifications import Notification_SensorError, Notification_TechnicianWarning
-from SharedPickle import get_dxd_file
-from SheetsHandler import get_drive_service
+from googleCred import get_drive_service
 from Soils import Soil
 from Technician import Technician
 from Thresholds import Thresholds
@@ -228,6 +227,18 @@ class Logger(object):
         print(f'\t{soil_type_str:30} | FC: {str(self.soil.field_capacity)}   WP: {str(self.soil.wilting_point)}')
         print(f'\t{updated_str:30} | Crashed: {str(self.crashed)}')
         print('....................................................................')
+
+    def get_dxd_file(self, dxd_name):
+        '''
+        Returns the file named `dxd_name` in Google Drive
+        :param dxd_name: should have .dxd at the end
+        :return:
+        '''
+        import SharedPickle as sh
+        DXD_FOLDER = '12tW4E9EmU-f3JynckrAJq3qd_Ndd-sH6'
+        dxd_id = sh.find_file_id_in_folder(DXD_FOLDER, dxd_name)
+        dxd_data = sh.load_drive_file(dxd_id, dxd_name)
+        return dxd_data, dxd_id
 
     def get_logger_data(
             self,

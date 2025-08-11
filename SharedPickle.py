@@ -1,9 +1,10 @@
+import base64
 import io
 import json
 import os
 import pickle
 import pytz
-
+from Logger import Logger
 from google.cloud import storage
 from google.oauth2 import service_account
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -128,14 +129,14 @@ def open_pickle(file_id=PICKLE_FILE_ID):
             request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
             # file_metadata = request.execute()
 
-            fh = io.BytesIO()  # file handler
+            fh = io.BytesIO()  # file handler - a memory buffer like a temp file
             downloader = MediaIoBaseDownload(fh, request)  # takes the api request and file handler (place to store the data)
 
-            done = False
+            done = False # downloading in chunks
             while not done:
                 status, done = downloader.next_chunk()
 
-            fh.seek(0)
+            fh.seek(0) #resets the read pointer so unpickling starts at the beginning
 
             # Use CustomUnpickler to load the data, treating WindowsPath as PureWindowsPath
             unpickler = CustomUnpickler(fh)
@@ -148,9 +149,19 @@ def open_pickle(file_id=PICKLE_FILE_ID):
         print(f"Error reading from Shared Drive: {e}")
         return None
 
+def is_recent(metadata, minutes=30):
+    """True if remote file modified within N minutes of now (UTC)."""
+    utc = datetime.strptime(metadata['modifiedTime'], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=pytz.utc)
+    return (datetime.now(pytz.utc) - utc) <= timedelta(minutes=minutes)
 
 def write_pickle(data, file_id=PICKLE_FILE_ID):
     try:
+        # mins_to_check = 30
+        # if not is_recent(data, minutes=mins_to_check):
+        #     raise RuntimeError(
+        #         f"Refusing to write: local copy older than {mins_to_check} minutes "
+        #         f"(read at {data['modifiedTime']})."
+        #     )
         service = get_drive_service()
         # Convert Path objects to PureWindowsPath before writing
         data = convert_to_pure_windows_path(data)
@@ -512,15 +523,16 @@ def find_file_id_in_folder(folder_id: str, file_name: str) -> str | None:
     files = resp.get("files", [])
     return files[0]["id"] if files else None
 
-def get_dxd_file(dxd_name):
-    '''
-    Returns the file named `dxd_name` in Google Drive
-    :param dxd_name: should have .dxd at the end
-    :return:
-    '''
-    dxd_id = find_file_id_in_folder(DXD_FOLDER, dxd_name)
-    dxd_data = load_drive_file(dxd_id, dxd_name)
-    return dxd_data, dxd_id
+# def get_dxd_file(dxd_name):
+#     '''
+#     Returns the file named `dxd_name` in Google Drive
+#     :param dxd_name: should have .dxd at the end
+#     :return:
+#     '''
+#
+#     dxd_id = find_file_id_in_folder(DXD_FOLDER, dxd_name)
+#     dxd_data = load_drive_file(dxd_id, dxd_name)
+#     return dxd_data, dxd_id
 
 
 # Example usage in your Slack bot
