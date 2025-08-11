@@ -66,8 +66,6 @@ def main_menu_command(ack, body, respond):
         respond("An error occurred while processing your request.")
 
 
-# ----------------------------------------------------
-
 @app.action("menu_select")
 def handle_main_menu(ack, body, respond):
     ack()
@@ -100,7 +98,6 @@ def handle_main_menu(ack, body, respond):
         uninstall_field_menu(ack, respond, grower_names)
     elif menu_option == 'Update Irr. Hours':
         update_irr_menu(ack, respond, grower_names)
-
 
 
 
@@ -942,7 +939,7 @@ def handle_logger_select_update_irr(ack, body, client, respond):
         },
     )
 
-# ─── Handle “Add another date” clicks ────────────────────────────────────
+# ─── Handle “Add another date” clicks
 @app.action("add_irr_row")
 def handle_add_irr_row(ack, body, client):
     ack()
@@ -971,7 +968,7 @@ def handle_add_irr_row(ack, body, client):
         },
     )
 
-# whenever any date_picker_<n> is used, just ack the action
+# whenever any date_picker is used, just ack the action
 @app.action(re.compile(r"date_picker_\d+"))
 def handle_any_date_picker(ack, body):
     ack()
@@ -1008,7 +1005,6 @@ def handle_update_irr_hours_submission(ack, body, client):
         SQLScripts.update_irrigation_hours_for_date(project, field, logger, daily_hours=entry["hours"], date=entry["date"])
 
     summary = "\n".join(f"• {e['date']}: {e['hours']}h" for e in entries)
-    # respond(f"*Updated irrigation for* `{grower}` / `{field}` / `{logger}`:\n"+ summary)
 
     client.chat_postEphemeral(channel = channel,user = user_id,text = f"*Updated irrigation for* `{grower}` / `{field}` / `{logger}`:\n{summary}")
     SheetsHandler.log_request_to_sheet('Update Irr Hours', user_name, f'{field} / {logger}: {summary}"')

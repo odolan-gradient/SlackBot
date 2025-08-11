@@ -193,7 +193,7 @@ def check_if_pickle_valid(metadata):
     # Convert to California time (PDT in April)
     california_tz = pytz.timezone("America/Los_Angeles")
     local_time = utc_time.astimezone(california_tz)
-    # print(f'Pickle timestamp: {local_time}')
+    print(f'Pickle timestamp: {local_time}')
     # Check if the date matches today's date in California
     today_local = datetime.now(california_tz).date()
     is_today = local_time.date() == today_local
