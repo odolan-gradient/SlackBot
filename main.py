@@ -42,18 +42,12 @@ user_selections = defaultdict(dict)
 
 
 @app.command("/menu")
-@app.command("/test")
 def main_menu_command(ack, body, respond):
     try:
         ack()
-
+        #  Ollie  U06NJRAT1T2
         # Javi 'U4KFKMH8C'
-        if body['user_id'] in ['U4KFKMH8C']:
-            menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Show Pickle', 'Use Previous Days VWC', 'Add Grower Billing', 'Get Field Location',
-                            'Change GPM / Irr Acres', 'Uninstall Fields']
-
-        # just Ollie  U06NJRAT1T2
-        elif body['user_id'] in ['U06NJRAT1T2']:
+        if body['user_id'] in ['U06NJRAT1T2', 'U4KFKMH8C']:
             menu_options = ['Get Soil Type', 'Change Soil Type', 'Toggle PSI', 'Delete PSI values', 'Show Pickle', 'Use Previous Days VWC',
                             'Modify Values', 'Add Grower Billing', 'Get Field Location', 'Change GPM / Irr Acres', 'Run Field', 'Uninstall Fields',
                             'Update Irr. Hours']
@@ -390,7 +384,7 @@ def handle_soil_and_psi_selections(ack, body, respond):
         selected_option = body['actions'][0]['selected_option']['value']
         user_selections[user_id][action_id] = selected_option
 
-    elif action_id in ['logger_select_change_soil', 'logger_select_psi']:  # logger_select
+    elif action_id in ['logger_select_change_soil']:  # logger_select
         selected_options = body['actions'][0]['selected_options']
         user_selections[user_id][action_id] = [option['value'] for option in selected_options]
 
@@ -519,10 +513,6 @@ def handle_prev_day_selections(ack, body, respond):
     project  = SharedPickle.get_project(field, grower.name)
     username = body["user"]["name"]
 
-    # log to Sheets
-    info = f"{','.join(loggers)} @ {vwcs}"
-    SheetsHandler.log_request_to_sheet("Use Previous Days VWC", username, info)
-
     # run the SQL updates
     for lg in loggers:
         SQLScripts.update_vwc_for_date_range(
@@ -544,6 +534,10 @@ def handle_prev_day_selections(ack, body, respond):
         msg += f"  (using {optional_day})"
 
     respond(text=msg)
+
+    # log to Sheets
+    info = f"{','.join(loggers)} @ {vwcs}"
+    SheetsHandler.log_request_to_sheet("Use Previous Days VWC", username, info)
 
     # clean up
     del user_selections[user_id]
@@ -854,23 +848,10 @@ def add_billing_menu(ack, respond, body, growers):
 
         # Log the request to Google Sheets
         request_name = 'Add Grower Billing'
-        # TODO
-        # info = body.username
-        #Error: 'dict' object has no attribute 'username' let Ollie know por favor
+        # TODO make it so it returns what rows were added then log that instead of nothing
         SheetsHandler.log_request_to_sheet(request_name, 'need to fix', '')
     except Exception as e:
         respond(f'Error: {e} let Ollie know por favor')
-    # response = {
-    #     "response_type": "in_channel",
-    #     "text": "Add Grower to Billing Sheet",
-    #     "attachments": [
-    #         grower_select_block(grower_names, action_id)
-    #     ]
-    # }
-
-    # respond(response)
-
-
 
 def delete_psi_menu(ack, respond, grower_names):
     ack()
@@ -939,7 +920,7 @@ def handle_logger_select_update_irr(ack, body, client, respond):
         },
     )
 
-# ─── Handle “Add another date” clicks
+# Handle “Add another date” clicks
 @app.action("add_irr_row")
 def handle_add_irr_row(ack, body, client):
     ack()
@@ -1032,15 +1013,3 @@ if __name__ == "__main__":
 # interactivity is the one that determines the debug
 # https://us-central1-rich-meridian-430023-j1.cloudfunctions.net/slackBot/slack/events
 # https://seal-app-er6sr.ondigitalocean.app/slack/events
-
-# use_prev_days_menu()
-# get_soil_type_from_coords(36.754599, -120.453252)
-# toggle_psi('Andrew', 'Andrew3101-3103', '3101-3101A-NW', 'off')
-# change_logger_soil_type('BR-7A-C', 'Bays Ranch7A', 'Bays Ranch', new_soil_type='Clay Loam')
-# growers = SharedPickle.open_pickle()
-# SheetsHandler.billing_report_new_tab_v2(growers)
-# TODO add feature to delete PSI
-# TODO feature to delete days and rerun with PSI on
-# TODO change BQ any value for any day so dont have to run queries every time
-# field_names = ['Carvalho308']
-# Decagon.only_certain_growers_fields_update(fields=field_names, get_data=True, get_weather=True, write_to_db=True, write_to_portal=True, subtract_from_mrid=200)

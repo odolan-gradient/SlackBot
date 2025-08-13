@@ -276,7 +276,7 @@ class Logger(object):
             else:
                 specific_file_name = specific_file_name + '.dxd'
 
-            dxd_file, file_id = get_dxd_file(specific_file_name)
+            dxd_file, file_id = self.get_dxd_file(specific_file_name)
             file_mrid = self.get_mrid(dxd_file)
             if self.crashed:
                 print("\tCrashed so running with previous MRID: {0}".format(self.prev_mrid))
@@ -326,7 +326,7 @@ class Logger(object):
                 self.write_dxd_to_drive(file_id, parsed_json, mr_id_to_set_back)
 
                 print('Reading data-')
-                raw_dxd, file_id = get_dxd_file(specific_file_name)
+                raw_dxd, file_id = self.get_dxd_file(specific_file_name)
                 raw_data = self.get_all_ports_information(raw_dxd)
                 print('-Finished')
                 print()
@@ -729,7 +729,7 @@ class Logger(object):
         """
         if zentra_api_version == 'v1':
             file_name = DXD_DIRECTORY + self.id + '.dxd'
-            dxd_file, _ = get_dxd_file(file_name)
+            dxd_file, _ = self.get_dxd_file(file_name)
             data = json.load(dxd_file)
             if "created" in data:
                 battery_level = data['device']['timeseries'][-1]['configuration']['values'][-1][-2][0]['value']

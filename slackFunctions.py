@@ -154,7 +154,10 @@ def bulk_toggle_psi(
     growers = SharedPickle.open_pickle()
     messages: list[str] = []
     # normalize fields to a list
-    fields = field_names if isinstance(field_names, (list, tuple)) else [field_names]
+    if isinstance(field_names, (list, tuple)):
+        fields = field_names
+    else:
+        fields = [field_names]
 
     for g in growers:
         if g.name != grower_name:
