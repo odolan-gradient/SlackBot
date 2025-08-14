@@ -69,7 +69,8 @@ def delete_psi_range(grower_name, field_name, logger_name, start_date, end_date)
     try:
       dbw.run_dml(dml, project=project)
       # also update in-memory pickle
-      for grower in SharedPickle.open_pickle():
+      growers = SharedPickle.open_pickle()
+      for grower in growers:
         if grower.name==grower_name:
           for f in grower.fields:
             if f.name==field_name:
@@ -79,7 +80,7 @@ def delete_psi_range(grower_name, field_name, logger_name, start_date, end_date)
                   # but simplest is to clear entirely
                   lg.ir_active=False
                   lg.consecutive_ir_values.clear()
-      SharedPickle.write_pickle( SharedPickle.open_pickle() )
+      SharedPickle.write_pickle( growers )
       return f"[{start_date}→{end_date}] Cleared PSI for {logger_name} in {field_name}"
     except Exception as e:
       return f"Error clearing {logger_name} in {field_name}: {e}"
@@ -245,10 +246,8 @@ def update_gpm_irrigation_acres_for_logger(
     except Exception as e:
         return f"Error updating {logger_name}: {e}"
 
-def uninstall_fields(fields, pickle = SharedPickle.open_pickle()):
-    # print(fields)
-    # return fields
-    grower_pickle = pickle
+def uninstall_fields(fields):
+    grower_pickle = SharedPickle.open_pickle()
     cleaned_split_field_names = fields
     dbw = DBWriter.DBWriter()
     YEAR = '2025'

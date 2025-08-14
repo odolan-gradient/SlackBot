@@ -1952,6 +1952,19 @@ def get_values_for_date(project, field_name, logger_name, date):
     else:
         return None
 
+def sql_literal(val):
+    """Return a BigQuery-safe SQL literal."""
+    if val is None:
+        return "NULL"
+    # if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
+    #     return "NULL"
+    # if isinstance(val, bool):
+    #     return "TRUE" if val else "FALSE"
+
+    # treat everything else as string; escape single quotes by doubling them
+    # s = str(val).replace("'", "''")
+    return val
+
 def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_date, vwcs, optional_day = None):
     # Ensure field_name is safe for database use
     field_name = dbwriter.remove_unwanted_chars_for_db_dataset(field_name)
@@ -1982,6 +1995,13 @@ def update_vwc_for_date_range(project, field_name, logger_name, start_date, end_
     if source_values:
         vwc_1_value, vwc_2_value, vwc_3_value, fc, wp = source_values
         current_date = start_date_dt
+
+        # Precompute SQL-safe literals once for Nones
+        vwc_1_value = sql_literal(vwc_1_value)
+        vwc_2_value = sql_literal(vwc_2_value)
+        vwc_3_value = sql_literal(vwc_3_value)
+        # fc = sql_literal(fc)
+        # wp = sql_literal(wp)
 
         # Loop through each date in the range and update/insert VWC data
         while current_date <= end_date_dt:
