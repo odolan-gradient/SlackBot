@@ -1,5 +1,8 @@
 from datetime import date
 
+'''
+Holds all the json menu blocks for the slack bot, this is what will be shown to the user. The UI
+'''
 
 def generate_options(list_of_items):
     return [
